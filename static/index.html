@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>高中物理题库助手</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark">物</div>
+        <div>
+          <h1>高中物理题库助手</h1>
+          <p>导入、审核、入库、组卷和导出 Word 的本地工作台</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="pandocStatus" class="status">检测 Pandoc...</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel-primary">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">1</span>
+            <span>导入题目</span>
+          </div>
+          <button type="button" id="draftBtn">生成题目草稿</button>
+        </div>
+
+        <div class="grid">
+          <label>
+            板块
+            <select id="blockCode"></select>
+          </label>
+          <label>
+            主类型
+            <select id="typeCode"></select>
+          </label>
+          <label>
+            难度系数
+            <input id="difficulty" placeholder="例如 0.63 或 3" />
+          </label>
+          <label>
+            年份
+            <input id="year" placeholder="例如 2025" />
+          </label>
+          <label class="wide">
+            来源
+            <input id="source" placeholder="例如 高三月考 / 教师自编" />
+          </label>
+          <label class="wide">
+            上传题目、答案、解析附件或图片
+            <input id="files" type="file" multiple accept=".doc,.docx,.pdf,image/*" />
+          </label>
+        </div>
+
+        <div class="convert-box">
+          <div class="minor-title">Word 转 Markdown 草稿</div>
+          <div class="convert-row">
+            <input id="wordConvertFile" type="file" accept=".docx" />
+            <select id="convertTarget">
+              <option value="questionText">填入题目正文</option>
+              <option value="answerText">填入答案</option>
+              <option value="analysisText">填入解析</option>
+            </select>
+            <button type="button" id="convertWordBtn" class="secondary">转换并填入</button>
+          </div>
+          <div class="hint">会抽取 Word 图片、识别题目结构，并对疑似 MathType 图片公式做本地 OCR。</div>
+        </div>
+
+        <label>
+          题目正文
+          <textarea id="questionText" rows="8" placeholder="粘贴题目正文，或先用 Word 转换填入"></textarea>
+        </label>
+        <div class="two-col">
+          <label>
+            答案
+            <textarea id="answerText" rows="7" placeholder="粘贴答案"></textarea>
+          </label>
+          <label>
+            解析
+            <textarea id="analysisText" rows="7" placeholder="粘贴解析"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">2</span>
+            <span>审核入库</span>
+          </div>
+          <button type="button" id="saveBtn" disabled>确认入库</button>
+        </div>
+        <div id="draftHint" class="empty">先在上方填写内容并生成草稿。</div>
+        <div id="reviewArea" class="hidden">
+          <div class="grid">
+            <label class="wide">
+              知识点
+              <textarea id="knowledgePoints" rows="3" placeholder="每行一个知识点"></textarea>
+            </label>
+            <label class="wide">
+              附加类型
+              <textarea id="extraTypes" rows="3" placeholder="每行一个类型，可留空"></textarea>
+            </label>
+          </div>
+          <label>
+            备注
+            <textarea id="remarks" rows="3" placeholder="可填写组卷说明、易错点或讲评提示"></textarea>
+          </label>
+          <div>
+            <div class="minor-title">图片预览</div>
+            <div id="imagePreview" class="preview-list"></div>
+          </div>
+          <div id="formulaPanel" class="formula-panel hidden">
+            <div class="minor-title">公式 OCR 确认</div>
+            <div class="hint">确认后会用 LaTeX 替换对应公式图片。未确认的疑似公式会阻止入库。</div>
+            <div id="formulaList"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">3</span>
+            <span>搜索组卷</span>
+          </div>
+          <button type="button" id="searchBtn">搜索题库</button>
+        </div>
+        <div class="grid">
+          <label>
+            板块
+            <select id="searchBlock"><option value="">全部</option></select>
+          </label>
+          <label>
+            主类型
+            <select id="searchType"><option value="">全部</option></select>
+          </label>
+          <label>
+            难度/系数
+            <input id="searchDifficulty" placeholder="例如 0.63 或 3" />
+          </label>
+          <label>
+            年份
+            <input id="searchYear" placeholder="例如 2025" />
+          </label>
+          <label>
+            来源
+            <input id="searchSource" placeholder="输入来源关键词" />
+          </label>
+          <label>
+            知识点
+            <input id="searchKnowledge" placeholder="输入知识点关键词" />
+          </label>
+        </div>
+        <div class="selection-bar">
+          <span>已选 <strong id="selectedCount">0</strong> 题</span>
+          <button type="button" id="clearSelectionBtn" class="ghost">清空选择</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>选择</th>
+                <th>题号</th>
+                <th>板块</th>
+                <th>类型</th>
+                <th>难度/系数</th>
+                <th>来源</th>
+                <th>题目预览</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">4</span>
+            <span>导出 Word</span>
+          </div>
+          <button type="button" id="exportBtn">生成试卷</button>
+        </div>
+        <div class="export-row">
+          <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
+          <label class="radio-card"><input type="radio" name="exportMode" value="answers" /> 题目 + 答案</label>
+          <label class="radio-card"><input type="radio" name="exportMode" value="analysis" /> 题目 + 答案 + 解析</label>
+        </div>
+        <div id="exportResult" class="result-box">生成后可下载 exam.md 和 exam.docx。</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

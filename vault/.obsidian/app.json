@@ -1,0 +1,9 @@
+{
+  "attachmentFolderPath": "assets",
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "题目",
+  "showLineNumber": false,
+  "spellcheck": false,
+  "promptDelete": false
+}

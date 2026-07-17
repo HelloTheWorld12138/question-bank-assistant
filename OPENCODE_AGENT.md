@@ -1,0 +1,105 @@
+# 本地 opencode agent 和公式 OCR 配置
+
+现在优先使用一键启动：
+
+```bat
+start.bat
+```
+
+`start.bat` 会调用 `scripts\start_all.ps1` 自动完成：
+
+- 创建项目内 `.venv`
+- 安装 Python 依赖
+- 安装或发现 `opencode-ai` CLI
+- 安装或发现 `latexocr` / `pix2tex`
+- 验证 `agent=True` 和 `formula_ocr=True`
+- 启动本地网页服务
+
+首次启动需要联网安装依赖，可能会比较慢。
+
+程序会在 Word 转 Markdown 之后调用本地 agent 来拆分：
+
+- 题目
+- 答案
+- 解析
+
+如果你已经有自己的 agent 命令，也可以手动覆盖。默认检测方式：
+
+```bat
+opencode run --print "<prompt>"
+```
+
+如果你的 opencode 命令不是这个形式，可以在启动前设置：
+
+```bat
+set QUESTION_AGENT_COMMAND=你的命令
+```
+
+可用模板变量：
+
+- `{prompt_file}`：程序生成的提示词文件路径
+- `{output_file}`：希望 agent 写入 JSON 的结果文件路径
+
+示例：
+
+```bat
+set QUESTION_AGENT_COMMAND=opencode run --print < "{prompt_file}"
+```
+
+或让 agent 写入指定文件：
+
+```bat
+set QUESTION_AGENT_COMMAND=opencode run < "{prompt_file}" > "{output_file}"
+```
+
+agent 必须返回 JSON：
+
+```json
+{
+  "question": "题干 Markdown",
+  "answer": "答案",
+  "analysis": "解析",
+  "confidence": 0.8,
+  "notes": "可选说明"
+}
+```
+
+如果没有检测到 opencode，或者 agent 返回失败，Word 单题导入会直接停止，不再回退到规则解析。
+
+## 本地公式 OCR
+
+旧版 MathType 经常会在 `.docx` 中变成图片。程序会检测疑似公式图片，并优先调用本地公式 OCR。
+
+默认自动检测：
+
+```bat
+latexocr
+pix2tex
+```
+
+也可以手动指定：
+
+```bat
+set FORMULA_OCR_COMMAND=你的命令
+```
+
+可用模板变量：
+
+- `{image_file}`：待识别公式图片路径
+- `{output_file}`：希望 OCR 写入 LaTeX 的结果文件路径
+
+示例：
+
+```bat
+set FORMULA_OCR_COMMAND=latexocr "{image_file}"
+```
+
+或：
+
+```bat
+set FORMULA_OCR_COMMAND=pix2tex "{image_file}" > "{output_file}"
+```
+
+OCR 结果不会直接入库。页面会显示原公式图片和 LaTeX 文本框，老师确认后才会替换为可编辑公式。
+
+如果没有检测到公式 OCR，Word 单题导入会直接停止。
