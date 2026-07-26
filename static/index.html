@@ -68,7 +68,7 @@
             </select>
             <button type="button" id="convertWordBtn" class="secondary">转换并填入</button>
           </div>
-          <div class="hint">会抽取 Word 图片、识别题目结构，并对疑似 MathType 图片公式做本地 OCR。</div>
+          <div class="hint">基础转换只需要 Pandoc；智能整理和公式 OCR 不可用时，会回退到离线规则与人工审核。</div>
         </div>
 
         <label>
@@ -172,6 +172,7 @@
                 <th>难度/系数</th>
                 <th>来源</th>
                 <th>题目预览</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody id="resultsBody"></tbody>
@@ -187,14 +188,107 @@
           </div>
           <button type="button" id="exportBtn">生成试卷</button>
         </div>
+        <label class="exam-title-field">
+          试卷标题
+          <input id="examTitle" value="试卷" placeholder="例如 高二力学周测" />
+        </label>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="answers" /> 题目 + 答案</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="analysis" /> 题目 + 答案 + 解析</label>
         </div>
-        <div id="exportResult" class="result-box">生成后可下载 exam.md 和 exam.docx。</div>
+        <div id="exportResult" class="result-box">每次生成都会创建独立文件，不会覆盖之前的试卷。</div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">5</span>
+            <span>题库维护</span>
+          </div>
+          <button type="button" id="refreshMaintenanceBtn" class="ghost">刷新状态</button>
+        </div>
+        <div class="maintenance-actions">
+          <button type="button" id="integrityBtn" class="secondary">检查图片</button>
+          <button type="button" id="rebuildIndexBtn" class="secondary">修复编号索引</button>
+          <button type="button" id="backupBtn">立即备份</button>
+        </div>
+        <div id="maintenanceResult" class="result-box">可检查题库完整性、创建备份并恢复误删题目。</div>
+        <div class="maintenance-grid">
+          <div>
+            <div class="minor-title">回收站</div>
+            <div id="trashList" class="maintenance-list"></div>
+          </div>
+          <div>
+            <div class="minor-title">题库备份</div>
+            <div id="backupList" class="maintenance-list"></div>
+          </div>
+        </div>
       </section>
     </main>
+
+    <dialog id="editDialog" class="edit-dialog">
+      <form id="editForm">
+        <div class="dialog-header">
+          <div>
+            <div class="minor-title">编辑题目</div>
+            <div id="editQuestionId" class="question-id"></div>
+          </div>
+          <button type="button" id="closeEditBtn" class="ghost compact">关闭</button>
+        </div>
+        <div class="grid">
+          <label>
+            板块（由题号确定）
+            <select id="editBlock" disabled></select>
+          </label>
+          <label>
+            主类型（由题号确定）
+            <select id="editMainType" disabled></select>
+          </label>
+          <label>
+            难度系数
+            <input id="editDifficulty" />
+          </label>
+          <label>
+            年份
+            <input id="editYear" />
+          </label>
+          <label class="wide">
+            来源
+            <input id="editSource" />
+          </label>
+          <label class="wide">
+            知识点（每行一个）
+            <textarea id="editKnowledge" rows="3"></textarea>
+          </label>
+          <label class="wide">
+            类型（每行一个）
+            <textarea id="editTypes" rows="3"></textarea>
+          </label>
+        </div>
+        <label>
+          题目
+          <textarea id="editQuestionText" rows="8"></textarea>
+        </label>
+        <div class="two-col">
+          <label>
+            答案
+            <textarea id="editAnswerText" rows="6"></textarea>
+          </label>
+          <label>
+            解析
+            <textarea id="editAnalysisText" rows="6"></textarea>
+          </label>
+        </div>
+        <label>
+          备注
+          <textarea id="editRemarks" rows="3"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="saveEditBtn">保存修改</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="/app.js"></script>
   </body>

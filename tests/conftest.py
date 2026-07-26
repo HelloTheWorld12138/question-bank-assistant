@@ -14,7 +14,9 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(config, "ASSETS_DIR", vault / "assets")
     monkeypatch.setattr(config, "DRAFT_ASSETS_DIR", vault / "assets" / "_drafts")
     monkeypatch.setattr(config, "INDEX_FILE", vault / "index.json")
+    monkeypatch.setattr(config, "INDEX_LOCK_FILE", vault / ".index.lock")
+    monkeypatch.setattr(config, "TRASH_DIR", vault / ".trash")
+    monkeypatch.setattr(config, "BACKUPS_DIR", vault / "backups")
     monkeypatch.setattr(config, "EXPORT_DIR", exports)
     storage.ensure_dirs()
     return vault
-

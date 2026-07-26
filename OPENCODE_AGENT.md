@@ -1,21 +1,22 @@
 # 本地 opencode agent 和公式 OCR 配置
 
-现在优先使用一键启动：
+OpenCode 和公式 OCR 都是可选增强，不是题库基础功能的运行前提。
+
+普通老师直接使用一键启动：
 
 ```bat
 start.bat
 ```
 
-`start.bat` 会调用 `scripts\start_all.ps1` 自动完成：
+`start.bat` 会调用 `scripts\start_all.ps1` 完成：
 
 - 创建项目内 `.venv`
 - 安装 Python 依赖
-- 安装或发现 `opencode-ai` CLI
-- 安装或发现 `latexocr` / `pix2tex`
-- 验证 `agent=True` 和 `formula_ocr=True`
+- 检测已有的 `opencode-ai` CLI
+- 检测已有的 `latexocr` / `pix2tex`
 - 启动本地网页服务
 
-首次启动需要联网安装依赖，可能会比较慢。
+启动脚本不会为了可选能力自动安装 Node.js、pnpm、OpenCode 或 pix2tex。缺少它们时，普通录题、离线规则整理、搜索和组卷仍可使用。
 
 程序会在 Word 转 Markdown 之后调用本地 agent 来拆分：
 
@@ -64,7 +65,7 @@ agent 必须返回 JSON：
 }
 ```
 
-如果没有检测到 opencode，或者 agent 返回失败，Word 单题导入会直接停止，不再回退到规则解析。
+如果没有检测到 OpenCode，或者 agent 返回失败，Word 单题导入会回退到离线规则解析和教师人工编辑。
 
 ## 本地公式 OCR
 
@@ -102,4 +103,4 @@ set FORMULA_OCR_COMMAND=pix2tex "{image_file}" > "{output_file}"
 
 OCR 结果不会直接入库。页面会显示原公式图片和 LaTeX 文本框，老师确认后才会替换为可编辑公式。
 
-如果没有检测到公式 OCR，Word 单题导入会直接停止。
+如果没有检测到公式 OCR，普通 Word 不受影响；疑似公式图片会保留原图，并要求老师手动填写和确认 LaTeX 后再入库。

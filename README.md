@@ -13,18 +13,20 @@
 ## 当前能力
 
 ```text
-手动粘贴 / DOCX
+手动粘贴 / DOCX（离线规则可用）
         ↓
 草稿审核与自动编号
         ↓
 Markdown + 图片入库
         ↓
-条件搜索与勾选组卷
+编辑 / 搜索 / 勾选组卷
         ↓
 Markdown / Word 导出
 ```
 
 题目数据保存在 `vault/题目/`，图片保存在 `vault/assets/`。Markdown 是正式题库的唯一真源。
+
+当前版本已经支持回收站恢复、图片完整性检查、编号索引修复、自动/手动备份，以及每次使用独立文件名导出试卷。OpenCode 和公式 OCR 均为可选增强。
 
 ## 当前 MVP 启动
 
@@ -55,6 +57,6 @@ python -m pytest
 ## 重要说明
 
 - 当前仍是开发版，不是可直接分发给教师的正式安装包；
-- OpenCode、公式 OCR 和 Pandoc 的耦合将在阶段 1、阶段 2 中继续处理；
+- OpenCode 和公式 OCR 已不再是基础导入的硬依赖；Pandoc 暂作为 DOCX 基础转换与 Word 导出引擎；
 - 最终版本要求无需 Python、Node、OpenCode、Obsidian 或命令行；
 - 后续开发严格按《项目实施规划》逐阶段完成。

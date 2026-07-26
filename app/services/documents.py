@@ -171,10 +171,6 @@ async def convert_docx(file: UploadFile) -> dict[str, Any]:
     pandoc_path = find_pandoc()
     if not pandoc_path:
         raise AppError("未检测到 Pandoc，无法转换 Word。")
-    if not opencode_available():
-        raise AppError("未检测到本地 opencode agent，Word 单题导入不可用。请先接入本地 agent。")
-    if not formula_ocr_available():
-        raise AppError("未检测到本地公式 OCR，Word 单题导入不可用。请先配置 FORMULA_OCR_COMMAND、latexocr 或 pix2tex。")
     if not file.filename or Path(file.filename).suffix.lower() != ".docx":
         raise AppError("请上传 .docx 格式的 Word 文件。")
 
@@ -231,23 +227,26 @@ async def convert_docx(file: UploadFile) -> dict[str, Any]:
     parsed = parse_question_sections(markdown)
     metadata: dict[str, Any] = {}
     agent_used = False
-    agent_sections, agent_error = run_opencode(markdown, config.ROOT)
-    if agent_sections:
-        parsed = {
-            "question": agent_sections.get("question") or parsed.get("question", ""),
-            "answer": agent_sections.get("answer") or parsed.get("answer", ""),
-            "analysis": agent_sections.get("analysis") or parsed.get("analysis", ""),
-        }
-        metadata = normalize_agent_metadata(agent_sections.get("metadata"))
-        agent_used = True
-    elif agent_error:
-        raise AppError(
-            f"本地 agent 解析失败，Word 单题导入已中止：{agent_error}",
-            status_code=500,
-            code="agent_failed",
-        )
-
     warnings = []
+    if opencode_available():
+        try:
+            agent_sections, agent_error = run_opencode(markdown, config.ROOT)
+        except Exception:
+            agent_sections, agent_error = None, "连接超时或本地智能整理进程异常"
+        if agent_sections:
+            parsed = {
+                "question": agent_sections.get("question") or parsed.get("question", ""),
+                "answer": agent_sections.get("answer") or parsed.get("answer", ""),
+                "analysis": agent_sections.get("analysis") or parsed.get("analysis", ""),
+            }
+            metadata = normalize_agent_metadata(agent_sections.get("metadata"))
+            agent_used = True
+        elif agent_error:
+            warnings.append(f"本地智能整理暂时不可用，已使用规则解析：{agent_error}")
+    else:
+        warnings.append("未配置本地智能整理，已使用离线规则解析。")
+    if formula_items and not formula_ocr_available():
+        warnings.append("检测到疑似公式图片，但未配置公式 OCR；请在审核区手动填写 LaTeX。")
     if has_editable_math(markdown):
         warnings.append("检测到可编辑 Markdown/LaTeX 公式，已保留。")
     if docx_payload["embedded_objects"]:

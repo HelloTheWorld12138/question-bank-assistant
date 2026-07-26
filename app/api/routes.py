@@ -1,4 +1,7 @@
-from typing import Any
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
@@ -7,7 +10,7 @@ from app import config, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
-from app.services import documents, questions
+from app.services import documents, maintenance, questions
 
 
 api_router = APIRouter(prefix="/api")
@@ -104,17 +107,61 @@ def get_question(question_id: str) -> dict[str, Any]:
     return {"metadata": metadata, "sections": sections}
 
 
+@api_router.put("/questions/{question_id}")
+def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return questions.update_question(question_id, payload)
+
+
+@api_router.delete("/questions/{question_id}")
+def delete_question(question_id: str) -> dict[str, Any]:
+    return maintenance.delete_question(question_id)
+
+
 @api_router.post("/export")
 def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     return questions.export_exam(payload)
 
 
+@api_router.post("/index/rebuild")
+def rebuild_index() -> dict[str, Any]:
+    return {"index": storage.rebuild_index()}
+
+
+@api_router.get("/integrity")
+def image_integrity() -> dict[str, Any]:
+    return maintenance.check_image_integrity()
+
+
+@api_router.get("/trash")
+def list_trash() -> dict[str, Any]:
+    return {"items": maintenance.list_trash()}
+
+
+@api_router.post("/trash/{trash_id}/restore")
+def restore_trash(trash_id: str) -> dict[str, Any]:
+    return maintenance.restore_trash(trash_id)
+
+
+@api_router.get("/backups")
+def list_backups() -> dict[str, Any]:
+    return {"items": maintenance.list_backups()}
+
+
+@api_router.post("/backups")
+def create_backup(payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    return maintenance.create_backup(str((payload or {}).get("label") or "手动备份"))
+
+
+@api_router.post("/backups/{filename}/restore")
+def restore_backup(filename: str) -> dict[str, Any]:
+    return maintenance.restore_backup(filename)
+
+
 @download_router.get("/download/{filename}")
 def download(filename: str) -> FileResponse:
-    if filename not in {"exam.md", "exam.docx"}:
+    if filename != Path(filename).name or Path(filename).suffix.lower() not in {".md", ".docx"}:
         raise AppError("不允许下载该文件")
     path = config.EXPORT_DIR / filename
     if not path.exists():
         raise AppError("文件不存在", status_code=404, code="not_found")
     return FileResponse(path, filename=filename)
-

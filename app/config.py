@@ -12,6 +12,9 @@ QUESTIONS_DIR = VAULT / "题目"
 ASSETS_DIR = VAULT / "assets"
 DRAFT_ASSETS_DIR = ASSETS_DIR / "_drafts"
 INDEX_FILE = VAULT / "index.json"
+INDEX_LOCK_FILE = VAULT / ".index.lock"
+TRASH_DIR = VAULT / ".trash"
+BACKUPS_DIR = VAULT / "backups"
 EXPORT_DIR = Path(os.getenv("QUESTION_BANK_EXPORT_DIR", ROOT / "exports")).expanduser().resolve()
 STATIC_DIR = ROOT / "static"
 LOG_DIR = Path(os.getenv("QUESTION_BANK_LOG_DIR", ROOT / "logs")).expanduser().resolve()
@@ -39,4 +42,3 @@ TYPES = {
 }
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".wmf", ".emf"}
-

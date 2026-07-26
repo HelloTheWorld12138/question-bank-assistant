@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,17 +16,28 @@ from app.math_ocr import detect_formula_items
 from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc
 
 
-def next_question_id(block_code: str, type_code: str) -> str:
+@contextmanager
+def reserve_question_id(block_code: str, type_code: str):
     if block_code not in config.BLOCKS:
         raise AppError("未知板块代码")
     if type_code not in config.TYPES:
         raise AppError("未知类型代码")
     prefix = f"{block_code}{type_code}"
-    index = storage.load_index()
-    next_number = index.get(prefix, 0) + 1
-    index[prefix] = next_number
-    storage.save_index(index)
-    return f"{prefix}{next_number:04d}"
+    with storage.file_lock(config.INDEX_LOCK_FILE):
+        index = storage.load_index()
+        next_number = index.get(prefix, 0) + 1
+        question_id = f"{prefix}{next_number:04d}"
+        while storage.question_path(question_id).exists():
+            next_number += 1
+            question_id = f"{prefix}{next_number:04d}"
+        yield question_id
+        index[prefix] = next_number
+        storage.save_index(index)
+
+
+def next_question_id(block_code: str, type_code: str) -> str:
+    with reserve_question_id(block_code, type_code) as question_id:
+        return question_id
 
 
 async def save_uploads(question_id: str, uploads: list[UploadFile], start_index: int = 1) -> list[str]:
@@ -117,32 +130,32 @@ async def create_question(
                 names = "、".join(item["name"] for item in unresolved_formulas[:3])
                 raise AppError(f"还有疑似公式图片未替换为 LaTeX，不能入库：{names}")
 
-    question_id = next_question_id(block_code, type_code)
-    images, draft_image_map = finalize_draft_images(question_id, draft_id)
-    images.extend(await save_uploads(question_id, files or [], start_index=len(images) + 1))
-    question_text = rewrite_draft_image_links(question_text, draft_id, draft_image_map)
-    answer_text = rewrite_draft_image_links(answer_text, draft_id, draft_image_map)
-    analysis_text = rewrite_draft_image_links(analysis_text, draft_id, draft_image_map)
+    with reserve_question_id(block_code, type_code) as question_id:
+        images, draft_image_map = finalize_draft_images(question_id, draft_id)
+        images.extend(await save_uploads(question_id, files or [], start_index=len(images) + 1))
+        question_text = rewrite_draft_image_links(question_text, draft_id, draft_image_map)
+        answer_text = rewrite_draft_image_links(answer_text, draft_id, draft_image_map)
+        analysis_text = rewrite_draft_image_links(analysis_text, draft_id, draft_image_map)
 
-    main_type = config.TYPES[type_code]
-    type_names = [main_type]
-    for item in storage.normalize_lines(extra_types):
-        if item not in type_names:
-            type_names.append(item)
-    metadata = {
-        "id": question_id,
-        "板块": config.BLOCKS[block_code],
-        "主类型": main_type,
-        "类型": type_names,
-        "知识点": storage.normalize_lines(knowledge_points),
-        "难度系数": (difficulty_coefficient or difficulty or "").strip(),
-        "年份": (year or "").strip(),
-        "来源": source.strip(),
-        "解析来源": "教师上传",
-        "图片": images,
-    }
-    sections = {"题目": question_text, "答案": answer_text, "解析": analysis_text, "备注": remarks}
-    path = storage.write_question(question_id, metadata, sections)
+        main_type = config.TYPES[type_code]
+        type_names = [main_type]
+        for item in storage.normalize_lines(extra_types):
+            if item not in type_names:
+                type_names.append(item)
+        metadata = {
+            "id": question_id,
+            "板块": config.BLOCKS[block_code],
+            "主类型": main_type,
+            "类型": type_names,
+            "知识点": storage.normalize_lines(knowledge_points),
+            "难度系数": (difficulty_coefficient or difficulty or "").strip(),
+            "年份": (year or "").strip(),
+            "来源": source.strip(),
+            "解析来源": "教师上传",
+            "图片": images,
+        }
+        sections = {"题目": question_text, "答案": answer_text, "解析": analysis_text, "备注": remarks}
+        path = storage.write_question(question_id, metadata, sections)
     try:
         display_path = str(path.relative_to(config.ROOT))
     except ValueError:
@@ -185,6 +198,57 @@ def search_questions(
     return results
 
 
+def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    metadata, sections = storage.read_question(question_id)
+    metadata_updates = payload.get("metadata") or {}
+    section_updates = payload.get("sections") or {}
+    if not isinstance(metadata_updates, dict) or not isinstance(section_updates, dict):
+        raise AppError("题目更新格式不正确")
+    if metadata_updates.get("id") not in (None, "", question_id):
+        raise AppError("题号不能通过普通编辑修改")
+    expected_block = config.BLOCKS.get(question_id[:2])
+    expected_main_type = config.TYPES.get(question_id[2:4])
+    if metadata_updates.get("板块") not in (None, "", expected_block):
+        raise AppError("板块与永久题号不一致，不能通过普通编辑修改")
+    if metadata_updates.get("主类型") not in (None, "", expected_main_type):
+        raise AppError("主类型与永久题号不一致，不能通过普通编辑修改")
+
+    allowed_metadata = {
+        "板块",
+        "主类型",
+        "类型",
+        "知识点",
+        "难度系数",
+        "年份",
+        "来源",
+        "解析来源",
+        "图片",
+    }
+    for key in allowed_metadata:
+        if key in metadata_updates:
+            metadata[key] = metadata_updates[key]
+    metadata["id"] = question_id
+
+    for key in storage.SECTION_NAMES:
+        if key in section_updates:
+            sections[key] = str(section_updates[key] or "")
+    path = storage.write_question(question_id, metadata, sections)
+    return {"id": question_id, "file": str(path), "metadata": storage.read_question(question_id)[0]}
+
+
+def rewrite_export_image_links(markdown: str, image_names: list[str]) -> str:
+    known_images = {Path(name).name for name in image_names}
+
+    def replace(match: re.Match[str]) -> str:
+        raw_url = match.group(1).strip()
+        filename = Path(raw_url.replace("\\", "/")).name
+        if filename not in known_images:
+            return match.group(0)
+        return match.group(0).replace(raw_url, (config.ASSETS_DIR / filename).as_posix())
+
+    return IMAGE_MARKDOWN_RE.sub(replace, markdown)
+
+
 def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     ids = payload.get("ids") or []
     mode = payload.get("mode") or "questions"
@@ -193,7 +257,8 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     if mode not in {"questions", "answers", "analysis"}:
         raise AppError("未知导出模式")
 
-    parts: list[str] = ["# 试卷\n"]
+    exam_title = str(payload.get("title") or "试卷").strip() or "试卷"
+    parts: list[str] = [f"# {exam_title}\n"]
     missing: list[str] = []
     for question_id in ids:
         try:
@@ -201,20 +266,28 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         except AppError:
             missing.append(str(question_id))
             continue
-        title = metadata.get("id", question_id)
-        parts.append(f"\n## 【{title}】\n")
-        parts.append(sections.get("题目", "").strip() + "\n")
+        question_label = metadata.get("id", question_id)
+        image_names = [str(item) for item in metadata.get("图片", []) or []]
+        question_text = rewrite_export_image_links(sections.get("题目", ""), image_names)
+        answer_text = rewrite_export_image_links(sections.get("答案", ""), image_names)
+        analysis_text = rewrite_export_image_links(sections.get("解析", ""), image_names)
+        parts.append(f"\n## 【{question_label}】\n")
+        parts.append(question_text.strip() + "\n")
         section_blob = "\n".join(sections.values())
-        for image in metadata.get("图片", []) or []:
+        for image in image_names:
             if str(image) not in section_blob:
                 parts.append(f"\n![]({(config.ASSETS_DIR / image).as_posix()})\n")
         if mode in {"answers", "analysis"}:
-            parts.extend(["\n### 答案\n", sections.get("答案", "").strip() + "\n"])
+            parts.extend(["\n### 答案\n", answer_text.strip() + "\n"])
         if mode == "analysis":
-            parts.extend(["\n### 解析\n", sections.get("解析", "").strip() + "\n"])
+            parts.extend(["\n### 解析\n", analysis_text.strip() + "\n"])
 
-    exam_md = config.EXPORT_DIR / "exam.md"
-    exam_docx = config.EXPORT_DIR / "exam.docx"
+    safe_title = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", exam_title).strip("_") or "试卷"
+    mode_name = {"questions": "题目", "answers": "题目答案", "analysis": "题目答案解析"}[mode]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    stem = f"{timestamp}_{safe_title}_{mode_name}"
+    exam_md = config.EXPORT_DIR / f"{stem}.md"
+    exam_docx = config.EXPORT_DIR / f"{stem}.docx"
     exam_md.write_text("\n".join(parts).strip() + "\n", encoding="utf-8")
 
     pandoc_path = find_pandoc()
@@ -236,8 +309,10 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         pandoc_message = "未检测到 Pandoc，已生成 exam.md；如需 Word，请先安装 Pandoc。"
 
     return {
-        "exam_md": "exports/exam.md",
-        "exam_docx": "exports/exam.docx" if docx_created else "",
+        "exam_md": f"exports/{exam_md.name}",
+        "exam_docx": f"exports/{exam_docx.name}" if docx_created else "",
+        "exam_md_filename": exam_md.name,
+        "exam_docx_filename": exam_docx.name if docx_created else "",
         "docx_created": docx_created,
         "pandoc_message": pandoc_message,
         "missing": missing,

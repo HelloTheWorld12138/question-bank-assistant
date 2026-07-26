@@ -34,3 +34,27 @@ def test_health_and_question_api(isolated_data):
         assert detail.status_code == 200
         assert detail.json()["metadata"]["难度系数"] == "2"
 
+        updated = client.put(
+            "/api/questions/LXJC0001",
+            json={
+                "metadata": {"知识点": ["速度", "加速度"]},
+                "sections": {"题目": "修改后的测试题目"},
+            },
+        )
+        assert updated.status_code == 200
+
+        integrity = client.get("/api/integrity")
+        assert integrity.status_code == 200
+        assert integrity.json()["ok"] is True
+
+        deleted = client.delete("/api/questions/LXJC0001")
+        assert deleted.status_code == 200
+        trash_id = deleted.json()["trash_id"]
+        assert client.get("/api/questions/LXJC0001").status_code == 404
+
+        restored = client.post(f"/api/trash/{trash_id}/restore")
+        assert restored.status_code == 200
+        assert client.get("/api/questions/LXJC0001").status_code == 200
+
+        unsafe = client.get("/api/questions/../../secrets")
+        assert unsafe.status_code in {400, 404}

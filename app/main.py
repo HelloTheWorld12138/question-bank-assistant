@@ -7,6 +7,7 @@ from app import config, storage
 from app.api.routes import api_router, download_router
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
+from app.services.maintenance import ensure_automatic_backup
 
 
 configure_logging()
@@ -16,6 +17,7 @@ storage.ensure_dirs()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     storage.ensure_dirs()
+    ensure_automatic_backup()
     yield
 
 

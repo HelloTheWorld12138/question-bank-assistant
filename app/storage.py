@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
+import uuid
+from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from app import config
-from app.errors import NotFoundError
+from app.errors import AppError, NotFoundError
 
 
 SECTION_NAMES = ("题目", "答案", "解析", "备注")
@@ -23,6 +28,8 @@ def ensure_dirs() -> None:
     config.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     config.DRAFT_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     config.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    config.TRASH_DIR.mkdir(parents=True, exist_ok=True)
+    config.BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     if not config.INDEX_FILE.exists():
         config.INDEX_FILE.write_text("{}", encoding="utf-8")
 
@@ -36,12 +43,57 @@ def load_index() -> dict[str, int]:
     return {str(key): int(value) for key, value in data.items()}
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def file_lock(path: Path, timeout: float = 10.0):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    descriptor: int | None = None
+    while descriptor is None:
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"等待文件锁超时：{path.name}")
+            time.sleep(0.05)
+    try:
+        os.write(descriptor, str(os.getpid()).encode("ascii", errors="ignore"))
+        yield
+    finally:
+        os.close(descriptor)
+        path.unlink(missing_ok=True)
+
+
 def save_index(index: dict[str, int]) -> None:
     ensure_dirs()
-    config.INDEX_FILE.write_text(
+    atomic_write_text(
+        config.INDEX_FILE,
         json.dumps(index, ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
+
+
+def rebuild_index() -> dict[str, int]:
+    ensure_dirs()
+    rebuilt: dict[str, int] = {}
+    pattern = re.compile(r"^([A-Z]{4})(\d{4})$")
+    with file_lock(config.INDEX_LOCK_FILE):
+        for path in config.QUESTIONS_DIR.glob("*.md"):
+            match = pattern.fullmatch(path.stem)
+            if not match:
+                continue
+            prefix, raw_number = match.groups()
+            rebuilt[prefix] = max(rebuilt.get(prefix, 0), int(raw_number))
+        save_index(rebuilt)
+    return rebuilt
 
 
 def normalize_lines(value: str | None) -> list[str]:
@@ -107,14 +159,22 @@ def question_preview(text: str, length: int = 120) -> str:
     return compact[:length] + ("..." if len(compact) > length else "")
 
 
+def validate_question_id(question_id: str) -> str:
+    normalized = str(question_id or "").strip()
+    if not re.fullmatch(r"[A-Z]{4}\d{4}", normalized):
+        raise AppError("题号格式无效")
+    return normalized
+
+
 def question_path(question_id: str):
+    question_id = validate_question_id(question_id)
     return config.QUESTIONS_DIR / f"{question_id}.md"
 
 
 def write_question(question_id: str, metadata: dict[str, Any], sections: dict[str, str]):
     ensure_dirs()
     path = question_path(question_id)
-    path.write_text(build_markdown(metadata, sections), encoding="utf-8")
+    atomic_write_text(path, build_markdown(metadata, sections))
     return path
 
 

@@ -5,6 +5,7 @@ const state = {
   wordDraftId: "",
   wordDraftImages: [],
   formulaItems: [],
+  editingId: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -23,14 +24,16 @@ async function loadOptions() {
   for (const block of state.options.blocks) {
     $("blockCode").appendChild(optionElement(block.code, block.name));
     $("searchBlock").appendChild(optionElement(block.name, block.name));
+    $("editBlock").appendChild(optionElement(block.name, block.name));
   }
   for (const type of state.options.types) {
     $("typeCode").appendChild(optionElement(type.code, type.name));
     $("searchType").appendChild(optionElement(type.name, type.name));
+    $("editMainType").appendChild(optionElement(type.name, type.name));
   }
 
   const status = $("pandocStatus");
-  const importReady = Boolean(state.options.pandoc && state.options.agent && state.options.formula_ocr);
+  const importReady = Boolean(state.options.pandoc);
   if (state.options.pandoc) {
     const parts = ["已检测到 Pandoc"];
     parts.push(state.options.agent ? "本地 agent" : "未检测到本地 agent");
@@ -41,9 +44,9 @@ async function loadOptions() {
     status.textContent = "未检测到 Pandoc，仅能生成 exam.md";
     status.classList.add("warn");
   }
-  $("convertWordBtn").disabled = !importReady;
-  if (!importReady) {
-    $("convertWordBtn").title = "需要同时接入 Pandoc、本地 opencode agent 和本地公式 OCR 后才能使用 Word 单题导入。";
+  $("convertWordBtn").disabled = !state.options.pandoc;
+  if (!state.options.pandoc) {
+    $("convertWordBtn").title = "需要 Pandoc 才能转换 Word；智能整理和公式 OCR 均为可选增强。";
   }
 }
 
@@ -116,8 +119,8 @@ function fillMetadata(metadata) {
   if (metadata["难度系数"]) $("difficulty").value = metadata["难度系数"];
   if (metadata["年份"]) $("year").value = metadata["年份"];
   if (metadata["来源"]) $("source").value = metadata["来源"];
-  if (metadata["知识点"]) $("knowledgePoints").value = metadata["知识点"];
-  if (metadata["类型"]) $("extraTypes").value = metadata["类型"];
+  if (metadata["知识点"]) $("knowledgePoints").value = metadataLines(metadata["知识点"]);
+  if (metadata["类型"]) $("extraTypes").value = metadataLines(metadata["类型"]);
   if (metadata["备注"]) $("remarks").value = metadata["备注"];
 }
 
@@ -214,8 +217,8 @@ function renderFormulaPanel() {
 }
 
 async function convertWordToMarkdown() {
-  if (!(state.options && state.options.pandoc && state.options.agent && state.options.formula_ocr)) {
-    alert("Word 单题导入需要先接入本地 opencode agent 和本地公式 OCR。");
+  if (!(state.options && state.options.pandoc)) {
+    alert("Word 单题导入需要 Pandoc。智能整理和公式 OCR 均为可选增强。");
     return;
   }
   const input = $("wordConvertFile");
@@ -245,9 +248,16 @@ async function convertWordToMarkdown() {
 
   const sections = data.sections || {};
   const fallback = data.markdown || "";
-  $("questionText").value = sections.question || fallback;
-  $("answerText").value = sections.answer || "";
-  $("analysisText").value = sections.analysis || "";
+  const target = $("convertTarget").value;
+  if (target === "questionText") {
+    $("questionText").value = sections.question || fallback;
+    $("answerText").value = mergeText($("answerText").value, sections.answer || "");
+    $("analysisText").value = mergeText($("analysisText").value, sections.analysis || "");
+  } else {
+    const sectionName = target === "answerText" ? "answer" : "analysis";
+    const convertedText = sections[sectionName] || sections.question || data.text_markdown || fallback;
+    $(target).value = mergeText($(target).value, convertedText);
+  }
   fillMetadata(data.metadata || {});
 
   state.wordDraftId = data.draft_id || "";
@@ -328,7 +338,7 @@ function renderResults(items) {
   if (!items.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.textContent = "没有找到题目。";
     row.appendChild(cell);
     body.appendChild(row);
@@ -361,6 +371,23 @@ function renderResults(items) {
       cell.textContent = value;
       row.appendChild(cell);
     }
+    const actionCell = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "action-group";
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "ghost compact";
+    editButton.textContent = "编辑";
+    editButton.addEventListener("click", () => openQuestionEditor(item.id));
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger compact";
+    deleteButton.textContent = "删除";
+    deleteButton.addEventListener("click", () => deleteQuestion(item.id));
+    actions.appendChild(editButton);
+    actions.appendChild(deleteButton);
+    actionCell.appendChild(actions);
+    row.appendChild(actionCell);
     body.appendChild(row);
   }
 }
@@ -387,19 +414,227 @@ async function exportExam() {
   const response = await fetch("/api/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids: Array.from(state.selected), mode }),
+    body: JSON.stringify({
+      ids: Array.from(state.selected),
+      mode,
+      title: $("examTitle").value.trim() || "试卷",
+    }),
   });
   const data = await response.json();
   if (!response.ok) {
     result.textContent = data.detail || "导出失败";
     return;
   }
-  const links = [`<a href="/download/exam.md">下载 exam.md</a>`];
+  result.innerHTML = "";
+  const markdownLink = document.createElement("a");
+  markdownLink.href = `/download/${encodeURIComponent(data.exam_md_filename)}`;
+  markdownLink.textContent = `下载 ${data.exam_md_filename}`;
+  result.appendChild(markdownLink);
   if (data.docx_created) {
-    links.push(`<a href="/download/exam.docx">下载 exam.docx</a>`);
+    const wordLink = document.createElement("a");
+    wordLink.href = `/download/${encodeURIComponent(data.exam_docx_filename)}`;
+    wordLink.textContent = `下载 ${data.exam_docx_filename}`;
+    result.appendChild(wordLink);
   }
-  const message = data.pandoc_message ? `<div>${data.pandoc_message}</div>` : "";
-  result.innerHTML = `${links.join("　")}${message}`;
+  if (data.pandoc_message) {
+    const message = document.createElement("div");
+    message.textContent = data.pandoc_message;
+    result.appendChild(message);
+  }
+}
+
+function lines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function metadataLines(value) {
+  if (Array.isArray(value)) return value.join("\n");
+  return String(value || "");
+}
+
+async function openQuestionEditor(questionId) {
+  const response = await fetch(`/api/questions/${encodeURIComponent(questionId)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "读取题目失败");
+    return;
+  }
+  const metadata = data.metadata || {};
+  const sections = data.sections || {};
+  state.editingId = questionId;
+  $("editQuestionId").textContent = questionId;
+  $("editBlock").value = metadata["板块"] || "";
+  $("editMainType").value = metadata["主类型"] || "";
+  $("editDifficulty").value = metadata["难度系数"] || "";
+  $("editYear").value = metadata["年份"] || "";
+  $("editSource").value = metadata["来源"] || "";
+  $("editKnowledge").value = metadataLines(metadata["知识点"]);
+  $("editTypes").value = metadataLines(metadata["类型"]);
+  $("editQuestionText").value = sections["题目"] || "";
+  $("editAnswerText").value = sections["答案"] || "";
+  $("editAnalysisText").value = sections["解析"] || "";
+  $("editRemarks").value = sections["备注"] || "";
+  $("editDialog").showModal();
+}
+
+async function saveQuestionEdit() {
+  if (!state.editingId) return;
+  const mainType = $("editMainType").value;
+  const typeValues = lines($("editTypes").value);
+  if (mainType && !typeValues.includes(mainType)) typeValues.unshift(mainType);
+  const response = await fetch(`/api/questions/${encodeURIComponent(state.editingId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      metadata: {
+        板块: $("editBlock").value,
+        主类型: mainType,
+        类型: typeValues,
+        知识点: lines($("editKnowledge").value),
+        难度系数: $("editDifficulty").value.trim(),
+        年份: $("editYear").value.trim(),
+        来源: $("editSource").value.trim(),
+      },
+      sections: {
+        题目: $("editQuestionText").value,
+        答案: $("editAnswerText").value,
+        解析: $("editAnalysisText").value,
+        备注: $("editRemarks").value,
+      },
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "保存失败");
+    return;
+  }
+  $("editDialog").close();
+  state.editingId = "";
+  await searchQuestions();
+}
+
+async function deleteQuestion(questionId) {
+  if (!confirm(`确定将 ${questionId} 移到回收站吗？可以稍后恢复。`)) return;
+  const response = await fetch(`/api/questions/${encodeURIComponent(questionId)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "删除失败");
+    return;
+  }
+  state.selected.delete(questionId);
+  await Promise.all([searchQuestions(), refreshMaintenance()]);
+}
+
+function renderMaintenanceList(holder, items, emptyText, buttonText, handler, labeler) {
+  holder.innerHTML = "";
+  if (!items.length) {
+    holder.textContent = emptyText;
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "maintenance-item";
+    const label = document.createElement("span");
+    label.textContent = labeler(item);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost compact";
+    button.textContent = buttonText;
+    button.addEventListener("click", () => handler(item));
+    row.appendChild(label);
+    row.appendChild(button);
+    holder.appendChild(row);
+  }
+}
+
+async function refreshMaintenance() {
+  const [trashResponse, backupResponse] = await Promise.all([fetch("/api/trash"), fetch("/api/backups")]);
+  const trashData = await trashResponse.json();
+  const backupData = await backupResponse.json();
+  renderMaintenanceList(
+    $("trashList"),
+    trashData.items || [],
+    "回收站为空。",
+    "恢复",
+    restoreTrashItem,
+    (item) => `${item.question_id} · ${item.deleted_at || ""}`,
+  );
+  renderMaintenanceList(
+    $("backupList"),
+    backupData.items || [],
+    "还没有备份。",
+    "恢复",
+    restoreBackupItem,
+    (item) => `${item.filename} · ${Math.ceil((item.size || 0) / 1024)} KB`,
+  );
+}
+
+async function restoreTrashItem(item) {
+  const response = await fetch(`/api/trash/${encodeURIComponent(item.trash_id)}/restore`, { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "恢复失败");
+    return;
+  }
+  $("maintenanceResult").textContent = `已恢复题目 ${data.restored}。`;
+  await Promise.all([searchQuestions(), refreshMaintenance()]);
+}
+
+async function createBackup() {
+  const response = await fetch("/api/backups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label: "手动备份" }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "备份失败");
+    return;
+  }
+  $("maintenanceResult").textContent = `备份已创建：${data.filename}`;
+  await refreshMaintenance();
+}
+
+async function restoreBackupItem(item) {
+  if (!confirm(`恢复备份 ${item.filename} 将替换当前题库。系统会先自动备份当前数据，是否继续？`)) return;
+  const response = await fetch(`/api/backups/${encodeURIComponent(item.filename)}/restore`, { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "备份恢复失败");
+    return;
+  }
+  state.selected.clear();
+  $("maintenanceResult").textContent = `已恢复备份；恢复前数据保存在 ${data.safety_backup}。`;
+  await Promise.all([searchQuestions(), refreshMaintenance()]);
+}
+
+async function checkIntegrity() {
+  const response = await fetch("/api/integrity");
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "检查失败");
+    return;
+  }
+  if (data.ok) {
+    $("maintenanceResult").textContent = `图片检查通过：${data.existing_count} 张图片均有对应题目。`;
+    return;
+  }
+  $("maintenanceResult").textContent =
+    `发现 ${data.missing.length} 张缺失图片、${data.orphaned.length} 张孤立图片。请先备份，再人工核对。`;
+}
+
+async function rebuildIndex() {
+  if (!confirm("确定扫描现有题目并重建编号索引吗？")) return;
+  const response = await fetch("/api/index/rebuild", { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "索引修复失败");
+    return;
+  }
+  $("maintenanceResult").textContent = `编号索引已修复，共识别 ${Object.keys(data.index || {}).length} 个编号前缀。`;
 }
 
 function bindEvents() {
@@ -414,9 +649,16 @@ function bindEvents() {
     searchQuestions();
   });
   $("exportBtn").addEventListener("click", exportExam);
+  $("closeEditBtn").addEventListener("click", () => $("editDialog").close());
+  $("saveEditBtn").addEventListener("click", saveQuestionEdit);
+  $("refreshMaintenanceBtn").addEventListener("click", refreshMaintenance);
+  $("integrityBtn").addEventListener("click", checkIntegrity);
+  $("rebuildIndexBtn").addEventListener("click", rebuildIndex);
+  $("backupBtn").addEventListener("click", createBackup);
 }
 
 loadOptions().then(() => {
   bindEvents();
   searchQuestions();
+  refreshMaintenance();
 });
