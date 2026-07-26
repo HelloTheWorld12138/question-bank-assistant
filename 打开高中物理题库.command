@@ -4,6 +4,7 @@ set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR" || exit 1
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 APP_URL="http://127.0.0.1:8000"
 LOG_DIR="$ROOT_DIR/logs"
@@ -48,6 +49,13 @@ if ! "$VENV_PYTHON" -c "import fastapi, uvicorn, pymupdf, PIL" >/dev/null 2>&1; 
     show_error "必要组件安装失败，请检查网络后重新双击启动文件。"
     exit 1
   }
+fi
+
+if ! command -v pandoc >/dev/null 2>&1; then
+  echo "首次运行：正在准备 Word 导出组件 Pandoc……"
+  if ! "$ROOT_DIR/scripts/install_pandoc_macos.sh"; then
+    /usr/bin/osascript -e 'display notification "Pandoc 暂未安装；题库可以打开，但 Word 转换与导出暂不可用。" with title "高中物理题库助手"' >/dev/null 2>&1
+  fi
 fi
 
 echo "正在启动高中物理题库助手……"

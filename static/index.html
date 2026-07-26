@@ -4,15 +4,25 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="directOpenWarning" class="direct-open-warning hidden">
+      <div class="direct-open-card">
+        <div class="brand-mark">物</div>
+        <div>
+          <strong>打开方式不正确</strong>
+          <p>请关闭本页，回到项目文件夹双击“打开高中物理题库.command”。</p>
+        </div>
+      </div>
+    </div>
+
     <header class="app-header">
       <div class="brand">
         <div class="brand-mark">物</div>
         <div>
           <h1>高中物理题库助手</h1>
-          <p>导入、审核、入库、组卷和导出 Word 的本地工作台</p>
+          <p>教师本地题库工作台</p>
         </div>
       </div>
       <div class="header-actions">
@@ -20,8 +30,82 @@
       </div>
     </header>
 
+    <nav class="task-nav" aria-label="主要功能">
+      <button type="button" class="task-nav-item is-active" data-workspace-target="home">首页</button>
+      <button type="button" class="task-nav-item" data-workspace-target="import">批量导入</button>
+      <button type="button" class="task-nav-item" data-workspace-target="manual">单题录入</button>
+      <button type="button" class="task-nav-item" data-workspace-target="search">智能找题</button>
+      <button type="button" class="task-nav-item" data-workspace-target="export">组卷导出</button>
+      <button type="button" class="task-nav-item" data-workspace-target="maintenance">题库维护</button>
+      <button type="button" class="task-nav-item" data-workspace-target="settings">AI 设置</button>
+    </nav>
+
     <main class="layout">
-      <section class="panel import-center">
+      <section class="workspace-home workspace-view is-active" data-workspace-view="home">
+        <div class="home-hero">
+          <div>
+            <span class="eyebrow">PHYSICS QUESTION BANK</span>
+            <h2>今天要完成什么？</h2>
+            <p>按教学任务进入对应工作区，不需要理解 Markdown、OCR 或命令行。</p>
+          </div>
+          <div class="home-hero-badge">
+            <strong>本地优先</strong>
+            <span>题库数据保存在当前电脑</span>
+          </div>
+        </div>
+
+        <div class="task-entry-grid">
+          <button type="button" class="task-entry-card entry-import" data-workspace-target="import">
+            <span class="task-entry-icon">导</span>
+            <span class="task-entry-copy">
+              <strong>导入一份资料</strong>
+              <small>Word、PDF、扫描件或照片批量切题</small>
+            </span>
+            <span class="task-entry-arrow">→</span>
+          </button>
+          <button type="button" class="task-entry-card entry-manual" data-workspace-target="manual">
+            <span class="task-entry-icon">录</span>
+            <span class="task-entry-copy">
+              <strong>录入一道题</strong>
+              <small>粘贴题目、答案和解析，审核后入库</small>
+            </span>
+            <span class="task-entry-arrow">→</span>
+          </button>
+          <button type="button" class="task-entry-card entry-search" data-workspace-target="search">
+            <span class="task-entry-icon">找</span>
+            <span class="task-entry-copy">
+              <strong>按要求找题</strong>
+              <small>用一句话筛选知识点、难度和题型</small>
+            </span>
+            <span class="task-entry-arrow">→</span>
+          </button>
+          <button type="button" class="task-entry-card entry-export" data-workspace-target="export">
+            <span class="task-entry-icon">卷</span>
+            <span class="task-entry-copy">
+              <strong>整理并导出试卷</strong>
+              <small>调整顺序和题号，生成可编辑 Word</small>
+            </span>
+            <span class="task-entry-arrow">→</span>
+          </button>
+        </div>
+
+        <div class="home-status-grid">
+          <div class="home-status-card">
+            <span>Word 导出</span>
+            <strong id="homePandocStatus">正在检测</strong>
+          </div>
+          <div class="home-status-card">
+            <span>离线 OCR</span>
+            <strong id="homeOcrStatus">正在检测</strong>
+          </div>
+          <div class="home-status-card">
+            <span>AI 辅助</span>
+            <strong id="homeModelStatus">可选功能</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel import-center workspace-view" data-workspace-view="import">
         <div class="section-title">
           <div>
             <span class="step-badge">导</span>
@@ -58,7 +142,7 @@
         </details>
       </section>
 
-      <section class="panel panel-primary">
+      <section class="panel panel-primary workspace-view" data-workspace-view="manual">
         <div class="section-title">
           <div>
             <span class="step-badge">1</span>
@@ -128,7 +212,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel workspace-view" data-workspace-view="manual">
         <div class="section-title">
           <div>
             <span class="step-badge">2</span>
@@ -172,7 +256,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel workspace-view" data-workspace-view="search">
         <div class="section-title">
           <div>
             <span class="step-badge">3</span>
@@ -271,7 +355,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel workspace-view" data-workspace-view="export">
         <div class="section-title">
           <div>
             <span class="step-badge">4</span>
@@ -333,7 +417,7 @@
         <div id="exportResult" class="result-box">每次生成都会创建独立文件，不会覆盖之前的试卷。</div>
       </section>
 
-      <section class="panel">
+      <section class="panel workspace-view" data-workspace-view="maintenance">
         <div class="section-title">
           <div>
             <span class="step-badge">5</span>
@@ -360,7 +444,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel workspace-view" data-workspace-view="settings">
         <div class="section-title">
           <div>
             <span class="step-badge">6</span>
@@ -522,6 +606,6 @@
       </form>
     </dialog>
 
-    <script src="/app.js"></script>
+    <script src="./app.js"></script>
   </body>
 </html>

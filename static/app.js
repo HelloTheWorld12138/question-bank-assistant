@@ -16,6 +16,38 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+const WORKSPACE_VIEWS = new Set([
+  "home",
+  "import",
+  "manual",
+  "search",
+  "export",
+  "maintenance",
+  "settings",
+]);
+
+function switchWorkspaceView(requestedView, { updateHash = true } = {}) {
+  const view = WORKSPACE_VIEWS.has(requestedView) ? requestedView : "home";
+  for (const section of document.querySelectorAll("[data-workspace-view]")) {
+    section.classList.toggle("is-active", section.dataset.workspaceView === view);
+  }
+  for (const button of document.querySelectorAll(".task-nav-item")) {
+    button.classList.toggle("is-active", button.dataset.workspaceTarget === view);
+  }
+  if (updateHash) {
+    history.replaceState(null, "", `#${view}`);
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function bindWorkspaceNavigation() {
+  for (const button of document.querySelectorAll("[data-workspace-target]")) {
+    button.addEventListener("click", () => switchWorkspaceView(button.dataset.workspaceTarget));
+  }
+  const initialView = window.location.hash.replace("#", "");
+  switchWorkspaceView(initialView || "home", { updateHash: false });
+}
+
 function optionElement(value, text) {
   const option = document.createElement("option");
   option.value = value;
@@ -67,6 +99,8 @@ async function loadOptions() {
     status.textContent = "未检测到 Pandoc，仅能生成 exam.md";
     status.classList.add("warn");
   }
+  $("homePandocStatus").textContent = state.options.pandoc ? "Pandoc 已就绪" : "尚未安装 Pandoc";
+  $("homeOcrStatus").textContent = state.options.ocr?.available ? "本地 OCR 已就绪" : "基础模式（人工复核）";
   $("convertWordBtn").disabled = !state.options.pandoc;
   if (!state.options.pandoc) {
     $("convertWordBtn").title = "需要 Pandoc 才能转换 Word；智能整理和公式 OCR 均为可选增强。";
@@ -1362,6 +1396,9 @@ function renderModelSettings(data) {
     (settings.local_only ? " · 当前禁止连接云模型" : "");
   $("aiClassifyBtn").disabled = !settings.enabled;
   $("aiClassifyBtn").title = settings.enabled ? "" : "请先在下方启用并保存 AI 辅助设置。";
+  $("homeModelStatus").textContent = settings.enabled
+    ? `${settings.provider_name || "模型服务"}已启用`
+    : "未启用（核心功能可用）";
 }
 
 async function loadModelSettings() {
@@ -1518,10 +1555,16 @@ function bindEvents() {
   $("commitImportBtn").addEventListener("click", commitImportDrafts);
 }
 
-loadOptions().then(() => {
-  bindEvents();
-  searchQuestions();
-  refreshMaintenance();
-  loadModelSettings();
-  loadImportStatus();
-});
+bindWorkspaceNavigation();
+
+if (window.location.protocol === "file:") {
+  $("directOpenWarning").classList.remove("hidden");
+} else {
+  loadOptions().then(() => {
+    bindEvents();
+    searchQuestions();
+    refreshMaintenance();
+    loadModelSettings();
+    loadImportStatus();
+  });
+}
