@@ -1,9 +1,10 @@
 import os
+import platform
 from pathlib import Path
 
 
 APP_NAME = "高中物理题库助手"
-APP_VERSION = "0.2.0-dev"
+APP_VERSION = "0.3.0-dev"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,10 +16,42 @@ INDEX_FILE = VAULT / "index.json"
 INDEX_LOCK_FILE = VAULT / ".index.lock"
 TRASH_DIR = VAULT / ".trash"
 BACKUPS_DIR = VAULT / "backups"
+USER_TEMPLATES_DIR = VAULT / "templates"
 EXPORT_DIR = Path(os.getenv("QUESTION_BANK_EXPORT_DIR", ROOT / "exports")).expanduser().resolve()
 STATIC_DIR = ROOT / "static"
 LOG_DIR = Path(os.getenv("QUESTION_BANK_LOG_DIR", ROOT / "logs")).expanduser().resolve()
 LOCAL_PANDOC = ROOT / "tools" / "pandoc" / "pandoc.exe"
+BUNDLED_TEMPLATES_DIR = ROOT / "templates"
+OFFICECLI_VERSION = "1.0.142"
+OFFICECLI_DIR = ROOT / "tools" / "officecli"
+
+
+def bundled_officecli_name() -> str:
+    machine = platform.machine().lower()
+    if os.name == "nt":
+        return "officecli-win-arm64.exe" if machine in {"arm64", "aarch64"} else "officecli-win-x64.exe"
+    if platform.system() == "Darwin":
+        return "officecli-mac-arm64" if machine in {"arm64", "aarch64"} else "officecli-mac-x64"
+    return "officecli-linux-arm64" if machine in {"arm64", "aarch64"} else "officecli-linux-x64"
+
+
+LOCAL_OFFICECLI = OFFICECLI_DIR / bundled_officecli_name()
+
+EXAM_TEMPLATES = {
+    "a4_single": {"name": "A4 单栏练习", "filename": "a4_single.docx"},
+    "a4_double": {"name": "A4 双栏练习", "filename": "a4_double.docx"},
+    "formal_exam": {"name": "正式考试卷", "filename": "formal_exam.docx"},
+}
+
+
+def exam_template_path(template_key: str) -> Path:
+    spec = EXAM_TEMPLATES.get(template_key)
+    if not spec:
+        raise ValueError("未知试卷模板")
+    user_template = USER_TEMPLATES_DIR / spec["filename"]
+    if user_template.is_file():
+        return user_template
+    return BUNDLED_TEMPLATES_DIR / spec["filename"]
 
 BLOCKS = {
     "LX": "力学",

@@ -188,10 +188,32 @@
           </div>
           <button type="button" id="exportBtn">生成试卷</button>
         </div>
-        <label class="exam-title-field">
-          试卷标题
-          <input id="examTitle" value="试卷" placeholder="例如 高二力学周测" />
-        </label>
+        <div class="grid export-settings">
+          <label class="wide">
+            试卷标题
+            <input id="examTitle" value="试卷" placeholder="例如 高二力学周测" />
+          </label>
+          <label>
+            排版模板
+            <select id="examTemplate"></select>
+          </label>
+          <label>
+            考试时间
+            <input id="examDuration" value="45 分钟" placeholder="例如 45 分钟" />
+          </label>
+          <label>
+            满分
+            <input id="examTotalScore" value="100 分" placeholder="例如 100 分" />
+          </label>
+          <label class="checkbox-line">
+            <input id="showQuestionIds" type="checkbox" checked />
+            在试卷上显示题库题号
+          </label>
+          <label class="checkbox-line">
+            <input id="answersNewPage" type="checkbox" checked />
+            答案与解析另起一页
+          </label>
+        </div>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="answers" /> 题目 + 答案</label>
@@ -211,6 +233,7 @@
         <div class="maintenance-actions">
           <button type="button" id="integrityBtn" class="secondary">检查图片</button>
           <button type="button" id="rebuildIndexBtn" class="secondary">修复编号索引</button>
+          <button type="button" id="restoreTemplatesBtn" class="secondary">恢复默认模板</button>
           <button type="button" id="backupBtn">立即备份</button>
         </div>
         <div id="maintenanceResult" class="result-box">可检查题库完整性、创建备份并恢复误删题目。</div>

@@ -71,3 +71,14 @@ def test_read_all_questions_exposes_compatible_fields(isolated_data):
     assert item["难度"] == "0.65"
     assert item["难度系数"] == "0.65"
     assert item["preview"] == "电路题"
+
+
+def test_default_templates_are_copied_and_can_be_restored(isolated_data):
+    for spec in config.EXAM_TEMPLATES.values():
+        assert (config.USER_TEMPLATES_DIR / spec["filename"]).is_file()
+
+    target = config.USER_TEMPLATES_DIR / "a4_single.docx"
+    target.write_bytes(b"custom")
+    restored = storage.restore_default_templates(overwrite=True)
+    assert "a4_single.docx" in restored
+    assert target.read_bytes() == (config.BUNDLED_TEMPLATES_DIR / "a4_single.docx").read_bytes()

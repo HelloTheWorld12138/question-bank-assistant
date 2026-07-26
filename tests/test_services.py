@@ -1,5 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -88,6 +90,88 @@ def test_export_rewrites_question_image_to_absolute_path(isolated_data):
         ["LXJD0001_01.png"],
     )
     assert image_path.as_posix() in rewritten
+
+
+def test_formal_export_uses_template_and_officecli_review(isolated_data, monkeypatch):
+    storage.write_question(
+        "LXJD0001",
+        {
+            "id": "LXJD0001",
+            "板块": "力学",
+            "主类型": "经典题",
+            "图片": [],
+        },
+        {
+            "题目": "由 $F=ma$ 求物体的加速度。",
+            "答案": "$a=F/m$",
+            "解析": "代入牛顿第二定律。",
+            "备注": "",
+        },
+    )
+    pandoc = isolated_data.parent / "pandoc"
+    pandoc.write_text("test", encoding="utf-8")
+    captured_command = []
+
+    def fake_pandoc(command, **kwargs):
+        captured_command.extend(command)
+        output = Path(command[command.index("-o") + 1])
+        output.write_bytes(b"docx")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(questions, "find_pandoc", lambda: str(pandoc))
+    monkeypatch.setattr(questions.subprocess, "run", fake_pandoc)
+    monkeypatch.setattr(
+        questions.office,
+        "officecli_status",
+        lambda: {"available": True, "version": config.OFFICECLI_VERSION},
+    )
+    monkeypatch.setattr(
+        questions.office,
+        "validate_document",
+        lambda path: {"ok": True, "message": "Validation passed"},
+    )
+    monkeypatch.setattr(
+        questions.office,
+        "inspect_issues",
+        lambda path: {"count": 0, "issues": []},
+    )
+    monkeypatch.setattr(
+        questions.office,
+        "read_document_structure",
+        lambda path, depth=1: {"type": "document"},
+    )
+
+    def fake_preview(path, output):
+        output.write_text("<html>preview</html>", encoding="utf-8")
+        return output
+
+    monkeypatch.setattr(questions.office, "render_html", fake_preview)
+
+    exported = questions.export_exam(
+        {
+            "ids": ["LXJD0001"],
+            "mode": "analysis",
+            "title": "牛顿定律练习",
+            "template": "formal_exam",
+            "duration": "45 分钟",
+            "total_score": "100 分",
+            "show_ids": False,
+            "answers_new_page": True,
+        }
+    )
+
+    markdown = (config.EXPORT_DIR / exported["exam_md_filename"]).read_text(encoding="utf-8")
+    assert exported["docx_created"] is True
+    assert exported["engine"] == "pandoc+officecli"
+    assert exported["validation"]["ok"] is True
+    assert exported["preview_filename"].endswith("_预览.html")
+    assert (config.EXPORT_DIR / exported["preview_filename"]).exists()
+    assert any(argument.startswith("--reference-doc=") for argument in captured_command)
+    assert "formal_exam.docx" in " ".join(captured_command)
+    assert "# 参考答案" in markdown
+    assert "# 解析" in markdown
+    assert 'w:type="page"' in markdown
+    assert "【LXJD0001】" not in markdown
 
 
 def test_update_question_keeps_id_and_changes_content(isolated_data):

@@ -1,5 +1,8 @@
 $ErrorActionPreference = "Stop"
 
+$Version = "3.10.1"
+$AssetName = "pandoc-$Version-windows-x86_64.zip"
+$ExpectedSha256 = "4725a1883e2171c2e181e6fd45003acb59ca4e9cbe031fdd3b79ef0d697d36aa"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PandocExe = Join-Path $Root "tools\pandoc\pandoc.exe"
 
@@ -21,17 +24,17 @@ $PandocDir = Join-Path $ToolsDir "pandoc"
 New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
-$Headers = @{ "User-Agent" = "WhiteCaps-Pandoc-Installer" }
-$Release = Invoke-RestMethod -Headers $Headers -Uri "https://api.github.com/repos/jgm/pandoc/releases/latest"
-$Asset = $Release.assets | Where-Object { $_.name -match "windows-x86_64\.zip$" } | Select-Object -First 1
+$Headers = @{ "User-Agent" = "Question-Bank-Assistant-Packager" }
+$DownloadUrl = "https://github.com/jgm/pandoc/releases/download/$Version/$AssetName"
+$Zip = Join-Path $TempDir $AssetName
+Write-Host "Downloading $AssetName"
+Invoke-WebRequest -Headers $Headers -Uri $DownloadUrl -OutFile $Zip
 
-if (-not $Asset) {
-  throw "Cannot find Pandoc Windows x86_64 zip asset."
+$ActualHash = (Get-FileHash -Algorithm SHA256 $Zip).Hash.ToLowerInvariant()
+if ($ActualHash -ne $ExpectedSha256) {
+  Remove-Item $Zip -Force
+  throw "Pandoc checksum verification failed."
 }
-
-$Zip = Join-Path $TempDir $Asset.name
-Write-Host "Downloading $($Asset.name)"
-Invoke-WebRequest -Headers $Headers -Uri $Asset.browser_download_url -OutFile $Zip
 
 if (Test-Path $PandocDir) {
   Remove-Item -Recurse -Force $PandocDir

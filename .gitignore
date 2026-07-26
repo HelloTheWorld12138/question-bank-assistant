@@ -33,6 +33,7 @@ vault/assets/_drafts/
 vault/题目/*.md
 !vault/题目/.gitkeep
 vault/backups/
+vault/templates/
 vault/.trash/
 vault/.index.lock
 
@@ -42,6 +43,7 @@ tools/git/
 tools/gh/
 tools/downloads/
 tools/opencode/node_modules/
+tools/officecli/officecli*
 node_modules/
 
 # Local Obsidian plugin runtime settings

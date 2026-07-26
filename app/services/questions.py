@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ from fastapi import UploadFile
 from app import config, storage
 from app.errors import AppError
 from app.math_ocr import detect_formula_items
+from app.services import office
 from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc
 
 
@@ -249,6 +251,24 @@ def rewrite_export_image_links(markdown: str, image_names: list[str]) -> str:
     return IMAGE_MARKDOWN_RE.sub(replace, markdown)
 
 
+def page_break_markdown() -> str:
+    return (
+        "\n```{=openxml}\n"
+        '<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n'
+        "```\n"
+    )
+
+
+def resolve_exam_template(template_key: str) -> tuple[Path, dict[str, str]]:
+    spec = config.EXAM_TEMPLATES.get(template_key)
+    if not spec:
+        raise AppError("未知试卷模板")
+    path = config.exam_template_path(template_key)
+    if not path.is_file():
+        raise AppError("试卷模板不存在，请在维护区恢复默认模板")
+    return path, spec
+
+
 def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     ids = payload.get("ids") or []
     mode = payload.get("mode") or "questions"
@@ -258,9 +278,27 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         raise AppError("未知导出模式")
 
     exam_title = str(payload.get("title") or "试卷").strip() or "试卷"
-    parts: list[str] = [f"# {exam_title}\n"]
+    duration = str(payload.get("duration") or "").strip()
+    total_score = str(payload.get("total_score") or "").strip()
+    template_key = str(payload.get("template") or "a4_single").strip()
+    template_path, template_spec = resolve_exam_template(template_key)
+    show_ids = payload.get("show_ids", True) is not False
+    answers_new_page = payload.get("answers_new_page", True) is not False
+
+    title_yaml = json.dumps(exam_title, ensure_ascii=False)
+    parts: list[str] = ["---", f"title: {title_yaml}", "---", ""]
+    exam_meta = []
+    if duration:
+        exam_meta.append(f"考试时间：{duration}")
+    if total_score:
+        exam_meta.append(f"满分：{total_score}")
+    if exam_meta:
+        parts.extend([f"**{'　　'.join(exam_meta)}**", ""])
+    parts.extend(["# 题目", ""])
+
     missing: list[str] = []
-    for question_id in ids:
+    exported_questions: list[dict[str, str]] = []
+    for number, question_id in enumerate(ids, start=1):
         try:
             metadata, sections = storage.read_question(str(question_id))
         except AppError:
@@ -271,16 +309,33 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         question_text = rewrite_export_image_links(sections.get("题目", ""), image_names)
         answer_text = rewrite_export_image_links(sections.get("答案", ""), image_names)
         analysis_text = rewrite_export_image_links(sections.get("解析", ""), image_names)
-        parts.append(f"\n## 【{question_label}】\n")
-        parts.append(question_text.strip() + "\n")
+        label = f"{number}. 【{question_label}】" if show_ids else f"{number}."
+        parts.extend([f"## {label}", "", question_text.strip(), ""])
         section_blob = "\n".join(sections.values())
         for image in image_names:
             if str(image) not in section_blob:
-                parts.append(f"\n![]({(config.ASSETS_DIR / image).as_posix()})\n")
-        if mode in {"answers", "analysis"}:
-            parts.extend(["\n### 答案\n", answer_text.strip() + "\n"])
-        if mode == "analysis":
-            parts.extend(["\n### 解析\n", analysis_text.strip() + "\n"])
+                parts.extend([f"![]({(config.ASSETS_DIR / image).as_posix()})", ""])
+        exported_questions.append(
+            {
+                "label": label,
+                "answer": answer_text.strip() or "（未提供答案）",
+                "analysis": analysis_text.strip() or "（未提供解析）",
+            }
+        )
+
+    if mode in {"answers", "analysis"}:
+        if answers_new_page:
+            parts.append(page_break_markdown())
+        parts.extend(["# 参考答案", ""])
+        for item in exported_questions:
+            parts.extend([f"## {item['label']}", "", item["answer"], ""])
+
+    if mode == "analysis":
+        if answers_new_page:
+            parts.append(page_break_markdown())
+        parts.extend(["# 解析", ""])
+        for item in exported_questions:
+            parts.extend([f"## {item['label']}", "", item["analysis"], ""])
 
     safe_title = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", exam_title).strip("_") or "试卷"
     mode_name = {"questions": "题目", "answers": "题目答案", "analysis": "题目答案解析"}[mode]
@@ -293,9 +348,24 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     pandoc_path = find_pandoc()
     docx_created = False
     pandoc_message = ""
+    office_message = ""
+    validation: dict[str, Any] = {"performed": False, "ok": None, "message": ""}
+    issue_report: dict[str, Any] = {"count": 0, "issues": []}
+    preview_filename = ""
+    office_status = office.officecli_status()
+    export_engine = "markdown"
     if pandoc_path:
         completed = subprocess.run(
-            [pandoc_path, str(exam_md), "-o", str(exam_docx)],
+            [
+                pandoc_path,
+                str(exam_md),
+                "--from=gfm+tex_math_dollars+raw_attribute",
+                "--standalone",
+                f"--resource-path={config.ASSETS_DIR}",
+                f"--reference-doc={template_path}",
+                "-o",
+                str(exam_docx),
+            ],
             cwd=str(config.ROOT),
             capture_output=True,
             text=True,
@@ -303,10 +373,27 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         )
         if completed.returncode == 0:
             docx_created = True
+            export_engine = "pandoc"
         else:
             pandoc_message = completed.stderr.strip() or "Pandoc 导出失败"
     else:
         pandoc_message = "未检测到 Pandoc，已生成 exam.md；如需 Word，请先安装 Pandoc。"
+
+    if docx_created and office_status.get("available"):
+        export_engine = "pandoc+officecli"
+        try:
+            validation = {"performed": True, **office.validate_document(exam_docx)}
+            issue_report = office.inspect_issues(exam_docx)
+            # Reading the root once verifies that OfficeCLI can parse the
+            # generated structure, not only that the ZIP package is valid.
+            office.read_document_structure(exam_docx, depth=1)
+            preview_path = config.EXPORT_DIR / f"{stem}_预览.html"
+            office.render_html(exam_docx, preview_path)
+            preview_filename = preview_path.name
+        except AppError as exc:
+            office_message = f"Word 已生成，但 OfficeCLI 复核未完成：{exc.message}"
+    elif docx_created:
+        office_message = "未检测到 OfficeCLI，已保留 Pandoc 生成的 Word 文件。"
 
     return {
         "exam_md": f"exports/{exam_md.name}",
@@ -315,5 +402,13 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         "exam_docx_filename": exam_docx.name if docx_created else "",
         "docx_created": docx_created,
         "pandoc_message": pandoc_message,
+        "office_message": office_message,
+        "officecli": office_status,
+        "validation": validation,
+        "issues": issue_report,
+        "preview_filename": preview_filename,
+        "template": template_key,
+        "template_name": template_spec["name"],
+        "engine": export_engine,
         "missing": missing,
     }

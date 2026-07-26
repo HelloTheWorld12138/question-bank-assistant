@@ -31,11 +31,19 @@ async function loadOptions() {
     $("searchType").appendChild(optionElement(type.name, type.name));
     $("editMainType").appendChild(optionElement(type.name, type.name));
   }
+  for (const template of state.options.templates || []) {
+    const label = template.available ? template.name : `${template.name}（缺失）`;
+    const option = optionElement(template.key, label);
+    option.disabled = !template.available;
+    $("examTemplate").appendChild(option);
+  }
 
   const status = $("pandocStatus");
   const importReady = Boolean(state.options.pandoc);
   if (state.options.pandoc) {
     const parts = ["已检测到 Pandoc"];
+    const officeStatus = state.options.officecli || {};
+    parts.push(officeStatus.available ? `OfficeCLI ${officeStatus.version || ""}`.trim() : "未检测到 OfficeCLI");
     parts.push(state.options.agent ? "本地 agent" : "未检测到本地 agent");
     parts.push(state.options.formula_ocr ? "公式 OCR" : "未检测到公式 OCR");
     status.textContent = parts.join(" / ");
@@ -418,6 +426,11 @@ async function exportExam() {
       ids: Array.from(state.selected),
       mode,
       title: $("examTitle").value.trim() || "试卷",
+      template: $("examTemplate").value || "a4_single",
+      duration: $("examDuration").value.trim(),
+      total_score: $("examTotalScore").value.trim(),
+      show_ids: $("showQuestionIds").checked,
+      answers_new_page: $("answersNewPage").checked,
     }),
   });
   const data = await response.json();
@@ -436,9 +449,32 @@ async function exportExam() {
     wordLink.textContent = `下载 ${data.exam_docx_filename}`;
     result.appendChild(wordLink);
   }
+  if (data.preview_filename) {
+    const previewLink = document.createElement("a");
+    previewLink.href = `/preview/${encodeURIComponent(data.preview_filename)}`;
+    previewLink.target = "_blank";
+    previewLink.rel = "noopener";
+    previewLink.textContent = "打开 Word 排版预览";
+    result.appendChild(previewLink);
+  }
+  const summary = document.createElement("div");
+  const validation = data.validation || {};
+  const issueCount = Number((data.issues || {}).count || 0);
+  const validationText = validation.performed
+    ? validation.ok
+      ? `结构校验通过，发现 ${issueCount} 个版式问题`
+      : "结构校验未通过"
+    : "未执行 OfficeCLI 结构校验";
+  summary.textContent = `${data.template_name || "默认模板"} · ${data.engine || "markdown"} · ${validationText}`;
+  result.appendChild(summary);
   if (data.pandoc_message) {
     const message = document.createElement("div");
     message.textContent = data.pandoc_message;
+    result.appendChild(message);
+  }
+  if (data.office_message) {
+    const message = document.createElement("div");
+    message.textContent = data.office_message;
     result.appendChild(message);
   }
 }
@@ -637,6 +673,17 @@ async function rebuildIndex() {
   $("maintenanceResult").textContent = `编号索引已修复，共识别 ${Object.keys(data.index || {}).length} 个编号前缀。`;
 }
 
+async function restoreDefaultTemplates() {
+  if (!confirm("确定用内置模板覆盖数据目录中的三套试卷模板吗？")) return;
+  const response = await fetch("/api/templates/restore", { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "模板恢复失败");
+    return;
+  }
+  $("maintenanceResult").textContent = `已恢复默认模板：${(data.restored || []).join("、") || "无需恢复"}`;
+}
+
 function bindEvents() {
   $("draftBtn").addEventListener("click", generateDraft);
   $("convertWordBtn").addEventListener("click", convertWordToMarkdown);
@@ -654,6 +701,7 @@ function bindEvents() {
   $("refreshMaintenanceBtn").addEventListener("click", refreshMaintenance);
   $("integrityBtn").addEventListener("click", checkIntegrity);
   $("rebuildIndexBtn").addEventListener("click", rebuildIndex);
+  $("restoreTemplatesBtn").addEventListener("click", restoreDefaultTemplates);
   $("backupBtn").addEventListener("click", createBackup);
 }
 

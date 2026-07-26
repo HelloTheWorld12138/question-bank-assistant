@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 import uuid
 from contextlib import contextmanager
@@ -30,8 +31,24 @@ def ensure_dirs() -> None:
     config.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     config.TRASH_DIR.mkdir(parents=True, exist_ok=True)
     config.BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    config.USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    restore_default_templates(overwrite=False)
     if not config.INDEX_FILE.exists():
         config.INDEX_FILE.write_text("{}", encoding="utf-8")
+
+
+def restore_default_templates(*, overwrite: bool = True) -> list[str]:
+    config.USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    restored: list[str] = []
+    for spec in config.EXAM_TEMPLATES.values():
+        filename = str(spec["filename"])
+        source = config.BUNDLED_TEMPLATES_DIR / filename
+        target = config.USER_TEMPLATES_DIR / filename
+        if not source.is_file() or (target.exists() and not overwrite):
+            continue
+        shutil.copy2(source, target)
+        restored.append(filename)
+    return restored
 
 
 def load_index() -> dict[str, int]:

@@ -26,7 +26,7 @@ Markdown / Word 导出
 
 题目数据保存在 `vault/题目/`，图片保存在 `vault/assets/`。Markdown 是正式题库的唯一真源。
 
-当前版本已经支持回收站恢复、图片完整性检查、编号索引修复、自动/手动备份，以及每次使用独立文件名导出试卷。OpenCode 和公式 OCR 均为可选增强。
+当前版本已经支持回收站恢复、图片完整性检查、编号索引修复、自动/手动备份，以及每次使用独立文件名导出试卷。Word 导出可选择 A4 单栏、A4 双栏和正式考试卷模板；OfficeCLI 可在导出后执行结构校验与 HTML 预览。OpenCode、公式 OCR 和 OfficeCLI 均有明确的离线降级路径。
 
 ## 当前 MVP 启动
 
@@ -57,6 +57,7 @@ python -m pytest
 ## 重要说明
 
 - 当前仍是开发版，不是可直接分发给教师的正式安装包；
-- OpenCode 和公式 OCR 已不再是基础导入的硬依赖；Pandoc 暂作为 DOCX 基础转换与 Word 导出引擎；
+- OpenCode 和公式 OCR 已不再是基础导入的硬依赖；Pandoc 负责 Markdown/DOCX 转换，OfficeCLI 负责结构读取、模板能力、导出复核和预览；
+- OfficeCLI 固定为 `1.0.142`，发行包构建时下载并校验哈希，教师电脑不需要连接 GitHub；
 - 最终版本要求无需 Python、Node、OpenCode、Obsidian 或命令行；
 - 后续开发严格按《项目实施规划》逐阶段完成。

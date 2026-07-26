@@ -10,7 +10,7 @@ from app import config, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
-from app.services import documents, maintenance, questions
+from app.services import documents, maintenance, office, questions
 
 
 api_router = APIRouter(prefix="/api")
@@ -29,12 +29,24 @@ def health() -> dict[str, Any]:
 
 @api_router.get("/options")
 def options() -> dict[str, Any]:
+    storage.ensure_dirs()
     return {
         "blocks": [{"code": code, "name": name} for code, name in config.BLOCKS.items()],
         "types": [{"code": code, "name": name} for code, name in config.TYPES.items()],
         "pandoc": documents.find_pandoc() is not None,
         "agent": opencode_available(),
         "formula_ocr": formula_ocr_available(),
+        "officecli": office.officecli_status(),
+        "templates": [
+            {
+                "key": key,
+                "name": spec["name"],
+                "filename": spec["filename"],
+                "available": config.exam_template_path(key).is_file(),
+                "customized": (config.USER_TEMPLATES_DIR / spec["filename"]).is_file(),
+            }
+            for key, spec in config.EXAM_TEMPLATES.items()
+        ],
         "app_version": config.APP_VERSION,
         "schema_version": config.SCHEMA_VERSION,
     }
@@ -127,6 +139,11 @@ def rebuild_index() -> dict[str, Any]:
     return {"index": storage.rebuild_index()}
 
 
+@api_router.post("/templates/restore")
+def restore_default_templates() -> dict[str, Any]:
+    return {"restored": storage.restore_default_templates(overwrite=True)}
+
+
 @api_router.get("/integrity")
 def image_integrity() -> dict[str, Any]:
     return maintenance.check_image_integrity()
@@ -165,3 +182,13 @@ def download(filename: str) -> FileResponse:
     if not path.exists():
         raise AppError("文件不存在", status_code=404, code="not_found")
     return FileResponse(path, filename=filename)
+
+
+@download_router.get("/preview/{filename}")
+def preview(filename: str) -> FileResponse:
+    if filename != Path(filename).name or Path(filename).suffix.lower() != ".html":
+        raise AppError("不允许预览该文件")
+    path = config.EXPORT_DIR / filename
+    if not path.exists():
+        raise AppError("预览文件不存在", status_code=404, code="not_found")
+    return FileResponse(path, media_type="text/html")

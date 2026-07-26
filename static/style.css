@@ -480,6 +480,27 @@ td:nth-child(2) {
   width: auto;
 }
 
+.export-settings {
+  align-items: end;
+}
+
+.checkbox-line {
+  display: flex;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: center;
+  min-height: 42px;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-soft);
+}
+
+.checkbox-line input {
+  width: auto;
+}
+
 .result-box {
   margin-top: 12px;
 }
