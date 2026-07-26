@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import pymupdf
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -158,3 +159,36 @@ def test_model_settings_test_and_classification_api(isolated_data, monkeypatch):
         assert classified.status_code == 200
         assert classified.json()["draft"]["板块"] == "力学"
         assert classified.json()["requires_confirmation"] is True
+
+
+def test_batch_pdf_import_requires_teacher_confirmation(isolated_data):
+    document = pymupdf.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "1. First mechanics question")
+    page.insert_text((72, 110), "2. Second mechanics question")
+    pdf_bytes = document.tobytes()
+    document.close()
+
+    with TestClient(app) as client:
+        analyzed = client.post(
+            "/api/import/analyze",
+            files={"file": ("questions.pdf", pdf_bytes, "application/pdf")},
+        )
+        assert analyzed.status_code == 200
+        task = analyzed.json()
+        assert len(task["drafts"]) == 2
+        assert client.get("/api/questions").json()["items"] == []
+
+        task["drafts"][0]["confirmed"] = True
+        task["drafts"][0]["block_code"] = "LX"
+        task["drafts"][0]["type_code"] = "JC"
+        committed = client.post(
+            f"/api/import/tasks/{task['id']}/commit",
+            json={"drafts": task["drafts"], "selected_ids": [task["drafts"][0]["id"]]},
+        )
+        assert committed.status_code == 200
+        assert committed.json()["created"][0]["id"] == "LXJC0001"
+
+        pending = client.get(f"/api/import/tasks/{task['id']}").json()
+        assert pending["status"] == "部分入库"
+        assert pending["drafts"][1]["committed_id"] == ""

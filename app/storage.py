@@ -33,6 +33,7 @@ def ensure_dirs() -> None:
     config.BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     config.USER_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
     config.AI_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    config.IMPORT_TASKS_DIR.mkdir(parents=True, exist_ok=True)
     restore_default_templates(overwrite=False)
     if not config.INDEX_FILE.exists():
         config.INDEX_FILE.write_text("{}", encoding="utf-8")

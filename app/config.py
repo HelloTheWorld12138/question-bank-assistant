@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 APP_NAME = "高中物理题库助手"
-APP_VERSION = "0.4.0-dev"
+APP_VERSION = "0.5.0-dev"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +19,7 @@ BACKUPS_DIR = VAULT / "backups"
 USER_TEMPLATES_DIR = VAULT / "templates"
 SETTINGS_FILE = VAULT / "settings.json"
 AI_DRAFTS_DIR = VAULT / "ai_drafts"
+IMPORT_TASKS_DIR = VAULT / "import_tasks"
 EXPORT_DIR = Path(os.getenv("QUESTION_BANK_EXPORT_DIR", ROOT / "exports")).expanduser().resolve()
 STATIC_DIR = ROOT / "static"
 KNOWLEDGE_FILE = ROOT / "data" / "knowledge.yaml"
@@ -80,3 +81,4 @@ TYPES = {
 QUESTION_TYPES = ("选择题", "填空题", "实验题", "计算题", "其他")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".wmf", ".emf"}
+IMPORT_EXTENSIONS = {".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}

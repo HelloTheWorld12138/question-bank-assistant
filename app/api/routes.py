@@ -10,7 +10,7 @@ from app import config, knowledge, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
-from app.services import documents, maintenance, models, office, questions
+from app.services import documents, imports as import_service, maintenance, models, office, questions
 
 
 api_router = APIRouter(prefix="/api")
@@ -38,6 +38,7 @@ def options() -> dict[str, Any]:
         "pandoc": documents.find_pandoc() is not None,
         "agent": opencode_available(),
         "formula_ocr": formula_ocr_available(),
+        "ocr": import_service.ocr_status(),
         "officecli": office.officecli_status(),
         "templates": [
             {
@@ -94,6 +95,62 @@ async def create_question(
 @api_router.post("/convert-docx")
 async def convert_docx(file: UploadFile = File(...)) -> dict[str, Any]:
     return await documents.convert_docx(file)
+
+
+@api_router.get("/import/status")
+def import_status() -> dict[str, Any]:
+    return {"ocr": import_service.ocr_status(), "tasks": import_service.list_import_tasks()}
+
+
+@api_router.post("/import/analyze")
+async def analyze_import(
+    file: UploadFile = File(...),
+    answer_file: Optional[UploadFile] = File(default=None),
+) -> dict[str, Any]:
+    return await import_service.create_import_task(file, answer_file)
+
+
+@api_router.get("/import/tasks/{task_id}")
+def get_import_task(task_id: str) -> dict[str, Any]:
+    return import_service.load_import_task(task_id)
+
+
+@api_router.put("/import/tasks/{task_id}")
+def update_import_task(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return import_service.update_import_task(task_id, payload)
+
+
+@api_router.post("/import/tasks/{task_id}/commit")
+async def commit_import_task(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return await import_service.commit_import_task(task_id, payload)
+
+
+@api_router.post("/import/tasks/{task_id}/drafts/{draft_id}/images/{image_name}/process")
+def process_import_image(
+    task_id: str,
+    draft_id: str,
+    image_name: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return import_service.process_draft_image(task_id, draft_id, image_name, payload)
+
+
+@api_router.post("/import/tasks/{task_id}/merge")
+def merge_import_drafts(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return import_service.merge_import_drafts(
+        task_id,
+        str(payload.get("first_id") or ""),
+        str(payload.get("second_id") or ""),
+    )
+
+
+@api_router.post("/import/tasks/{task_id}/drafts/{draft_id}/split")
+def split_import_draft(task_id: str, draft_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return import_service.split_import_draft(
+        task_id,
+        draft_id,
+        int(payload.get("position") or 0),
+    )
 
 
 @api_router.get("/questions")

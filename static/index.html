@@ -21,6 +21,43 @@
     </header>
 
     <main class="layout">
+      <section class="panel import-center">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">导</span>
+            <span>批量导入中心</span>
+          </div>
+          <div class="action-group">
+            <button type="button" id="saveImportDraftsBtn" class="secondary" disabled>保存审核草稿</button>
+            <button type="button" id="commitImportBtn" disabled>确认所选入库</button>
+          </div>
+        </div>
+        <div class="notice">
+          支持 DOCX、数字 PDF、扫描 PDF 和手机照片。系统只生成待审核草稿；
+          题目、答案、公式或匹配不确定时会醒目标记，不会自动进入正式题库。
+        </div>
+        <div class="grid">
+          <label class="wide">
+            题目文件
+            <input id="batchImportFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
+          </label>
+          <label class="wide">
+            答案或解析文件（可选）
+            <input id="batchAnswerFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
+          </label>
+        </div>
+        <div class="action-group import-actions">
+          <button type="button" id="analyzeImportBtn">分析并生成草稿</button>
+          <span id="ocrStatus" class="hint">正在检测本地 OCR……</span>
+        </div>
+        <div id="importResult" class="result-box">选择文件后开始分析。大文件可能需要一些时间。</div>
+        <div id="importDrafts" class="import-drafts"></div>
+        <details class="recent-imports">
+          <summary>最近导入任务</summary>
+          <div id="importTaskList" class="maintenance-list"></div>
+        </details>
+      </section>
+
       <section class="panel panel-primary">
         <div class="section-title">
           <div>

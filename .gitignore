@@ -36,6 +36,7 @@ vault/backups/
 vault/templates/
 vault/settings.json
 vault/ai_drafts/
+vault/import_tasks/
 vault/.trash/
 vault/.index.lock
 

@@ -166,12 +166,12 @@ def inspect_docx_payload(path: Path) -> dict[str, int]:
     return counts
 
 
-async def convert_docx(file: UploadFile) -> dict[str, Any]:
+def convert_docx_path(input_path: Path) -> dict[str, Any]:
     ensure_dirs()
     pandoc_path = find_pandoc()
     if not pandoc_path:
         raise AppError("未检测到 Pandoc，无法转换 Word。")
-    if not file.filename or Path(file.filename).suffix.lower() != ".docx":
+    if input_path.suffix.lower() != ".docx" or not input_path.is_file():
         raise AppError("请上传 .docx 格式的 Word 文件。")
 
     draft_id = str(uuid.uuid4())
@@ -180,10 +180,7 @@ async def convert_docx(file: UploadFile) -> dict[str, Any]:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        input_path = temp_path / "input.docx"
         output_path = temp_path / "output.md"
-        with input_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
         docx_payload = inspect_docx_payload(input_path)
 
         completed = subprocess.run(
@@ -267,3 +264,13 @@ async def convert_docx(file: UploadFile) -> dict[str, Any]:
         "agent_used": agent_used,
         "warnings": warnings,
     }
+
+
+async def convert_docx(file: UploadFile) -> dict[str, Any]:
+    if not file.filename or Path(file.filename).suffix.lower() != ".docx":
+        raise AppError("请上传 .docx 格式的 Word 文件。")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_path = Path(temp_dir) / "input.docx"
+        with input_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return convert_docx_path(input_path)

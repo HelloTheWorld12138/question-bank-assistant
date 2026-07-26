@@ -1,0 +1,4 @@
+-r requirements.txt
+paddleocr==3.7.0
+# Windows CPU 完整离线版构建时安装与目标 Python 匹配的 PaddlePaddle。
+# 具体 wheel 在打包阶段按 PaddleOCR 官方安装说明锁定并缓存，不在教师电脑首次启动下载。

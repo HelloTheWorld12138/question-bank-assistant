@@ -10,6 +10,7 @@ const state = {
   displayLabels: new Map(),
   modelSettings: null,
   modelProviders: [],
+  importTask: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -845,6 +846,391 @@ async function restoreDefaultTemplates() {
   $("maintenanceResult").textContent = `已恢复默认模板：${(data.restored || []).join("、") || "无需恢复"}`;
 }
 
+function importDraftById(draftId) {
+  return (state.importTask?.drafts || []).find((item) => item.id === draftId);
+}
+
+function bindDraftField(element, draft, field, transform = (value) => value) {
+  element.value = Array.isArray(draft[field]) ? draft[field].join("\n") : String(draft[field] ?? "");
+  element.addEventListener("input", () => {
+    draft[field] = transform(element.value);
+  });
+  element.addEventListener("change", () => {
+    draft[field] = transform(element.value);
+  });
+}
+
+function draftSelect(draft, field, options) {
+  const select = document.createElement("select");
+  for (const optionInfo of options) {
+    select.appendChild(optionElement(optionInfo.value, optionInfo.label));
+  }
+  bindDraftField(select, draft, field);
+  return select;
+}
+
+function draftLabel(text, control, wide = false) {
+  const label = document.createElement("label");
+  if (wide) label.className = "wide";
+  label.append(text, control);
+  return label;
+}
+
+function renderImportDrafts() {
+  const holder = $("importDrafts");
+  holder.innerHTML = "";
+  const task = state.importTask;
+  if (!task || !(task.drafts || []).length) {
+    $("saveImportDraftsBtn").disabled = true;
+    $("commitImportBtn").disabled = true;
+    return;
+  }
+  $("saveImportDraftsBtn").disabled = false;
+  $("commitImportBtn").disabled = false;
+  task.drafts.forEach((draft, index) => {
+    const card = document.createElement("article");
+    card.className = `import-draft-card${draft.requires_attention ? " needs-attention" : ""}`;
+    card.dataset.draftId = draft.id;
+
+    const header = document.createElement("div");
+    header.className = "import-draft-header";
+    const title = document.createElement("div");
+    const confidence = Math.round(Number(draft.confidence || 0) * 100);
+    const numberText = draft.original_number ? `原题号 ${draft.original_number}` : "未识别原题号";
+    title.textContent = `草稿 ${index + 1} · ${numberText} · 第 ${draft.page || 1} 页 · 置信度 ${confidence}%`;
+    const confirmedLabel = document.createElement("label");
+    confirmedLabel.className = "confirm-draft";
+    const confirmed = document.createElement("input");
+    confirmed.type = "checkbox";
+    confirmed.checked = Boolean(draft.confirmed);
+    confirmed.disabled = Boolean(draft.committed_id);
+    confirmed.addEventListener("change", () => {
+      draft.confirmed = confirmed.checked;
+    });
+    confirmedLabel.append(confirmed, draft.committed_id ? ` 已入库：${draft.committed_id}` : " 已对照原文核对");
+    header.append(title, confirmedLabel);
+    card.appendChild(header);
+
+    if ((draft.warnings || []).length) {
+      const warning = document.createElement("div");
+      warning.className = "draft-warning";
+      warning.textContent = draft.warnings.join("；");
+      card.appendChild(warning);
+    }
+
+    const metadataGrid = document.createElement("div");
+    metadataGrid.className = "grid";
+    metadataGrid.append(
+      draftLabel(
+        "板块",
+        draftSelect(
+          draft,
+          "block_code",
+          state.options.blocks.map((item) => ({ value: item.code, label: item.name })),
+        ),
+      ),
+      draftLabel(
+        "主类型",
+        draftSelect(
+          draft,
+          "type_code",
+          state.options.types.map((item) => ({ value: item.code, label: item.name })),
+        ),
+      ),
+      draftLabel(
+        "题型",
+        draftSelect(
+          draft,
+          "question_type",
+          [{ value: "", label: "未指定" }].concat(
+            (state.options.question_types || []).map((item) => ({ value: item, label: item })),
+          ),
+        ),
+      ),
+    );
+    const difficulty = document.createElement("input");
+    bindDraftField(difficulty, draft, "difficulty");
+    metadataGrid.appendChild(draftLabel("难度系数", difficulty));
+    const year = document.createElement("input");
+    bindDraftField(year, draft, "year");
+    metadataGrid.appendChild(draftLabel("年份", year));
+    const source = document.createElement("input");
+    bindDraftField(source, draft, "source");
+    metadataGrid.appendChild(draftLabel("来源", source, true));
+    const knowledge = document.createElement("textarea");
+    knowledge.rows = 2;
+    bindDraftField(knowledge, draft, "knowledge_points", lines);
+    metadataGrid.appendChild(draftLabel("知识点（每行一个）", knowledge, true));
+    const types = document.createElement("textarea");
+    types.rows = 2;
+    bindDraftField(types, draft, "extra_types", lines);
+    metadataGrid.appendChild(draftLabel("附加类型（每行一个）", types, true));
+    card.appendChild(metadataGrid);
+
+    const question = document.createElement("textarea");
+    question.rows = 8;
+    question.className = "import-question-text";
+    bindDraftField(question, draft, "question");
+    card.appendChild(draftLabel("题目正文", question));
+
+    const answerGrid = document.createElement("div");
+    answerGrid.className = "two-col";
+    const answer = document.createElement("textarea");
+    answer.rows = 5;
+    bindDraftField(answer, draft, "answer");
+    const analysis = document.createElement("textarea");
+    analysis.rows = 5;
+    bindDraftField(analysis, draft, "analysis");
+    answerGrid.append(draftLabel("答案", answer), draftLabel("解析", analysis));
+    card.appendChild(answerGrid);
+
+    if ((draft.images || []).length) {
+      const images = document.createElement("div");
+      images.className = "import-image-list";
+      for (const image of draft.images) {
+        const imageCard = document.createElement("div");
+        imageCard.className = "import-image-card";
+        const preview = document.createElement("img");
+        preview.src = image.url;
+        preview.alt = image.name;
+        const buttons = document.createElement("div");
+        buttons.className = "action-group";
+        for (const [action, label] of [
+          ["rotate_left", "左转"],
+          ["rotate_right", "右转"],
+          ["enhance", "去阴影增强"],
+          ["crop", "裁剪"],
+          ["perspective", "透视校正"],
+        ]) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "ghost compact";
+          button.textContent = label;
+          button.addEventListener("click", () => processImportImage(draft.id, image.name, action));
+          buttons.appendChild(button);
+        }
+        imageCard.append(preview, buttons);
+        images.appendChild(imageCard);
+      }
+      card.appendChild(images);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "dialog-actions";
+    if (index > 0) {
+      const merge = document.createElement("button");
+      merge.type = "button";
+      merge.className = "secondary";
+      merge.textContent = "与上一题合并";
+      merge.addEventListener("click", () => mergeImportDraft(index));
+      actions.appendChild(merge);
+    }
+    const split = document.createElement("button");
+    split.type = "button";
+    split.className = "secondary";
+    split.textContent = "在题目光标处拆分";
+    split.addEventListener("click", () => splitImportDraft(draft.id, question.selectionStart));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "移除此草稿";
+    remove.addEventListener("click", () => {
+      if (!confirm("确定从本次导入任务中移除这道草稿吗？尚未入库的数据将不再显示。")) return;
+      state.importTask.drafts.splice(index, 1);
+      renderImportDrafts();
+    });
+    actions.append(split, remove);
+    card.appendChild(actions);
+    holder.appendChild(card);
+  });
+}
+
+async function loadImportStatus() {
+  const response = await fetch("/api/import/status");
+  const data = await response.json();
+  if (!response.ok) {
+    $("ocrStatus").textContent = data.detail || "读取导入状态失败";
+    return;
+  }
+  $("ocrStatus").textContent = data.ocr?.message || "未检测到 OCR";
+  const list = $("importTaskList");
+  list.innerHTML = "";
+  for (const item of data.tasks || []) {
+    const row = document.createElement("div");
+    row.className = "maintenance-item";
+    const text = document.createElement("span");
+    text.textContent = `${item.source} · ${item.draft_count} 题 · ${item.status}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost compact";
+    button.textContent = "继续审核";
+    button.addEventListener("click", () => loadImportTask(item.id));
+    row.append(text, button);
+    list.appendChild(row);
+  }
+  if (!(data.tasks || []).length) list.textContent = "还没有导入任务。";
+}
+
+async function analyzeImportFile() {
+  const file = $("batchImportFile").files?.[0];
+  if (!file) {
+    alert("请先选择题目文件。");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const answerFile = $("batchAnswerFile").files?.[0];
+  if (answerFile) form.append("answer_file", answerFile);
+  $("analyzeImportBtn").disabled = true;
+  $("importResult").textContent = "正在提取文字、图片并切分题目，请稍候……";
+  const response = await fetch("/api/import/analyze", { method: "POST", body: form });
+  const data = await response.json();
+  $("analyzeImportBtn").disabled = false;
+  if (!response.ok) {
+    $("importResult").textContent = data.detail || "导入分析失败";
+    return;
+  }
+  state.importTask = data;
+  $("importResult").textContent =
+    `已生成 ${data.drafts?.length || 0} 道待审核草稿。请逐题对照原文，勾选“已核对”后再入库。`;
+  renderImportDrafts();
+  await loadImportStatus();
+}
+
+async function loadImportTask(taskId) {
+  const response = await fetch(`/api/import/tasks/${encodeURIComponent(taskId)}`);
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "读取导入任务失败");
+    return;
+  }
+  state.importTask = data;
+  $("importResult").textContent = `正在继续审核 ${data.source}，任务状态：${data.status}。`;
+  renderImportDrafts();
+  document.querySelector(".import-center")?.scrollIntoView({ behavior: "smooth" });
+}
+
+async function saveImportDrafts({ quiet = false } = {}) {
+  if (!state.importTask) return false;
+  const response = await fetch(`/api/import/tasks/${encodeURIComponent(state.importTask.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ drafts: state.importTask.drafts }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    $("importResult").textContent = data.detail || "保存导入草稿失败";
+    return false;
+  }
+  state.importTask = data;
+  if (!quiet) $("importResult").textContent = "审核草稿已保存，尚未写入正式题库。";
+  renderImportDrafts();
+  return true;
+}
+
+async function commitImportDrafts() {
+  if (!state.importTask) return;
+  const selectedIds = state.importTask.drafts.filter((item) => item.confirmed && !item.committed_id).map((item) => item.id);
+  if (!selectedIds.length) {
+    alert("请先逐题核对并勾选“已对照原文核对”。");
+    return;
+  }
+  if (!confirm(`确定将已核对的 ${selectedIds.length} 道题写入正式题库吗？`)) return;
+  $("commitImportBtn").disabled = true;
+  const response = await fetch(`/api/import/tasks/${encodeURIComponent(state.importTask.id)}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ drafts: state.importTask.drafts, selected_ids: selectedIds }),
+  });
+  const data = await response.json();
+  $("commitImportBtn").disabled = false;
+  if (!response.ok) {
+    $("importResult").textContent = data.detail || "批量入库失败";
+    return;
+  }
+  $("importResult").textContent = `已入库 ${data.created.length} 道题，任务状态：${data.status}。`;
+  await Promise.all([loadImportTask(state.importTask.id), searchQuestions(), loadImportStatus()]);
+}
+
+async function mergeImportDraft(index) {
+  if (!(await saveImportDrafts({ quiet: true }))) return;
+  const first = state.importTask.drafts[index - 1];
+  const second = state.importTask.drafts[index];
+  const response = await fetch(`/api/import/tasks/${encodeURIComponent(state.importTask.id)}/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ first_id: first.id, second_id: second.id }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "合并失败");
+    return;
+  }
+  state.importTask = data;
+  renderImportDrafts();
+}
+
+async function splitImportDraft(draftId, position) {
+  if (!(await saveImportDrafts({ quiet: true }))) return;
+  const response = await fetch(
+    `/api/import/tasks/${encodeURIComponent(state.importTask.id)}/drafts/${encodeURIComponent(draftId)}/split`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position }),
+    },
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "拆分失败");
+    return;
+  }
+  state.importTask = data;
+  renderImportDrafts();
+}
+
+async function processImportImage(draftId, imageName, action) {
+  let payload = { action };
+  if (action === "crop") {
+    const raw = prompt("输入保留范围：左,上,右,下（百分比），例如 5,5,95,95", "5,5,95,95");
+    if (!raw) return;
+    const values = raw.split(/[,，]/).map((item) => Number(item.trim()) / 100);
+    if (values.length !== 4 || values.some((item) => !Number.isFinite(item))) {
+      alert("裁剪范围格式不正确。");
+      return;
+    }
+    payload.crop = { left: values[0], top: values[1], right: values[2], bottom: values[3] };
+  }
+  if (action === "perspective") {
+    const raw = prompt(
+      "输入左上、右上、右下、左下四点的 x,y 百分比，例如 2,3;98,2;97,98;3,97",
+      "2,3;98,2;97,98;3,97",
+    );
+    if (!raw) return;
+    const corners = raw.split(";").map((point) => point.split(/[,，]/).map((item) => Number(item.trim()) / 100));
+    if (corners.length !== 4 || corners.some((point) => point.length !== 2 || point.some((item) => !Number.isFinite(item)))) {
+      alert("透视角点格式不正确。");
+      return;
+    }
+    payload.perspective = corners;
+  }
+  const response = await fetch(
+    `/api/import/tasks/${encodeURIComponent(state.importTask.id)}/drafts/${encodeURIComponent(draftId)}` +
+      `/images/${encodeURIComponent(imageName)}/process`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "图片处理失败");
+    return;
+  }
+  await loadImportTask(state.importTask.id);
+}
+
 function renderModelSettings(data) {
   state.modelSettings = data.settings || {};
   state.modelProviders = data.providers || state.modelProviders;
@@ -1022,6 +1408,9 @@ function bindEvents() {
   $("saveModelBtn").addEventListener("click", () => saveModelSettings());
   $("testModelBtn").addEventListener("click", testModelConnection);
   $("aiClassifyBtn").addEventListener("click", classifyCurrentQuestion);
+  $("analyzeImportBtn").addEventListener("click", analyzeImportFile);
+  $("saveImportDraftsBtn").addEventListener("click", () => saveImportDrafts());
+  $("commitImportBtn").addEventListener("click", commitImportDrafts);
 }
 
 loadOptions().then(() => {
@@ -1029,4 +1418,5 @@ loadOptions().then(() => {
   searchQuestions();
   refreshMaintenance();
   loadModelSettings();
+  loadImportStatus();
 });
