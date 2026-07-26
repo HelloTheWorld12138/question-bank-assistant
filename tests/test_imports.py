@@ -188,3 +188,67 @@ def test_split_and_merge_import_drafts(isolated_data):
     assert len(merged["drafts"]) == 1
     assert "第一部分文字" in merged["drafts"][0]["question"]
     assert "第二部分文字" in merged["drafts"][0]["question"]
+
+
+def test_materialize_chunk_deduplicates_repeated_image(isolated_data, tmp_path):
+    source = tmp_path / "formula.wmf"
+    source.write_bytes(b"fake-wmf")
+    markdown = "公式：![](formula.wmf)，再次出现：![](formula.wmf)"
+
+    converted, draft_id, images = imports._materialize_chunk(
+        markdown,
+        source_dir=tmp_path,
+        assets={"formula.wmf": source},
+    )
+
+    assert converted.count(f"/draft-assets/{draft_id}/formula.wmf") == 2
+    assert [item["name"] for item in images] == ["formula.wmf"]
+
+
+def test_replace_draft_metafile_updates_markdown_and_file(isolated_data):
+    task_id = "fbdb97fe-a9f0-4a42-a730-b5147b1742cc"
+    draft_asset_id = "f973431e-90ab-481b-bc94-a87905335f38"
+    draft_dir = config.DRAFT_ASSETS_DIR / draft_asset_id
+    draft_dir.mkdir(parents=True)
+    (draft_dir / "formula.wmf").write_bytes(b"fake-wmf")
+    old_url = f"/draft-assets/{draft_asset_id}/formula.wmf"
+    task = {
+        "id": task_id,
+        "status": "待审核",
+        "created_at": "2026-07-26T00:00:00+08:00",
+        "source": "mathtype.docx",
+        "drafts": [
+            {
+                "id": "draft-1",
+                "question": f"由 ![公式]({old_url}) 可得 *F*。",
+                "answer": "",
+                "analysis": "",
+                "remarks": "",
+                "draft_id": draft_asset_id,
+                "images": [{"name": "formula.wmf", "url": old_url}],
+                "formula_image_names": ["formula.wmf"],
+                "confirmed": True,
+            }
+        ],
+    }
+    imports.save_import_task(task)
+    buffer = BytesIO()
+    Image.new("RGB", (64, 24), "white").save(buffer, format="PNG")
+
+    result = asyncio.run(
+        imports.replace_draft_metafile(
+            task_id,
+            "draft-1",
+            "formula.wmf",
+            upload("formula.png", buffer.getvalue()),
+        )
+    )
+
+    updated = imports.load_import_task(task_id)["drafts"][0]
+    assert result["converted_name"] == "formula.png"
+    assert "formula.png" in updated["question"]
+    assert "formula.wmf" not in updated["question"]
+    assert updated["formula_image_names"] == ["formula.png"]
+    assert updated["confirmed"] is False
+    assert (draft_dir / "formula.png").is_file()
+    assert not (draft_dir / "formula.wmf").exists()

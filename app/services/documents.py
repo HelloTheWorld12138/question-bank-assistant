@@ -19,6 +19,11 @@ from app.storage import ensure_dirs
 
 
 IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+HTML_IMAGE_RE = re.compile(r"<img\b(?P<attributes>[^>]*)/?>", re.I)
+HTML_ATTRIBUTE_RE = re.compile(
+    r"(?P<name>[\w:-]+)\s*=\s*(?P<quote>[\"'])(?P<value>.*?)(?P=quote)",
+    re.S,
+)
 
 
 def find_pandoc() -> str | None:
@@ -35,8 +40,37 @@ def strip_markdown_images(markdown: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+def normalize_html_images(markdown: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        attributes = {
+            item.group("name").lower(): item.group("value")
+            for item in HTML_ATTRIBUTE_RE.finditer(match.group("attributes"))
+        }
+        source = attributes.get("src", "").strip()
+        if not source:
+            return match.group(0)
+        alt = attributes.get("alt", "").strip()
+        if not alt or alt.startswith("@@@"):
+            alt = "题图"
+        dimensions: list[str] = []
+        style = attributes.get("style", "")
+        for name in ("width", "height"):
+            value_match = re.search(
+                rf"(?:^|;)\s*{name}\s*:\s*([0-9.]+(?:in|cm|mm|px|pt|%))",
+                style,
+                flags=re.I,
+            )
+            if value_match:
+                dimensions.append(f"{name}={value_match.group(1)}")
+        suffix = f"{{{' '.join(dimensions)}}}" if dimensions else ""
+        return f"![{alt}]({source}){suffix}"
+
+    return HTML_IMAGE_RE.sub(replace, markdown)
+
+
 def normalize_converted_markdown(markdown: str, draft_id: str) -> str:
     markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    markdown = normalize_html_images(markdown)
     # Pandoc's GFM writer wraps Word/OMML inline equations as $`...`$ and
     # display equations as fenced `math` blocks. Normalize both forms so the
     # browser preview, Markdown source and DOCX export share one syntax.
@@ -257,9 +291,9 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     if has_editable_math(markdown):
         warnings.append("可编辑公式已保留，请核对显示效果。")
     if docx_payload["embedded_objects"]:
-        warnings.append("发现旧版公式或内嵌内容，请在公式图片区逐项检查。")
+        warnings.append("发现旧版公式或内嵌内容，系统会先保留原貌并转换为可显示图片。")
     if docx_payload["wmf_or_emf"]:
-        warnings.append("发现旧格式图片，网页可能无法预览；可保留原图，或在 Word 中另存为 PNG 后重新添加。")
+        warnings.append("发现旧格式图片，系统会在本机自动转换为 PNG；请核对公式和题图是否完整。")
 
     return {
         "markdown": markdown,

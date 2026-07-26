@@ -22,6 +22,10 @@ const MANUAL_SECTION_IDS = ["questionText", "answerText", "analysisText"];
 const EDIT_SECTION_IDS = ["editQuestionText", "editAnswerText", "editAnalysisText"];
 const RICH_CONTENT_RE =
   /(!\[[^\]]*\]\([^)]+\)(?:\{[^}\n]*\})?|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]+\$|\\\([^)\n]*\\\))/g;
+const INLINE_FORMAT_RE =
+  /(<sub>[^<>]*<\/sub>|<sup>[^<>]*<\/sup>|\*\*\*[^*\n]+\*\*\*|___[^_\n]+___|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/gi;
+const METAFILE_RE = /\.(wmf|emf)(?:\?.*)?$/i;
+let metafileConverterPromise = null;
 
 const WORKSPACE_VIEWS = new Set([
   "home",
@@ -55,11 +59,60 @@ function bindWorkspaceNavigation() {
   switchWorkspaceView(initialView || "home", { updateHash: false });
 }
 
-function appendPlainText(container, text) {
+function appendUnescapedText(container, text) {
+  container.appendChild(document.createTextNode(String(text || "").replace(/\\([*_])/g, "$1")));
+}
+
+function appendInlineFormattedLine(container, text) {
+  const source = String(text || "");
+  let lastIndex = 0;
+  for (const match of source.matchAll(INLINE_FORMAT_RE)) {
+    const index = Number(match.index);
+    if (index > 0 && source[index - 1] === "\\") continue;
+    appendUnescapedText(container, source.slice(lastIndex, index));
+    const token = match[0];
+    let element;
+    let content;
+    if (/^<sub>/i.test(token)) {
+      element = document.createElement("sub");
+      content = token.slice(5, -6);
+    } else if (/^<sup>/i.test(token)) {
+      element = document.createElement("sup");
+      content = token.slice(5, -6);
+    } else if (
+      (token.startsWith("***") && token.endsWith("***")) ||
+      (token.startsWith("___") && token.endsWith("___"))
+    ) {
+      element = document.createElement("strong");
+      const emphasis = document.createElement("em");
+      content = token.slice(3, -3);
+      emphasis.textContent = content;
+      element.appendChild(emphasis);
+      container.appendChild(element);
+      lastIndex = index + token.length;
+      continue;
+    } else if (
+      (token.startsWith("**") && token.endsWith("**")) ||
+      (token.startsWith("__") && token.endsWith("__"))
+    ) {
+      element = document.createElement("strong");
+      content = token.slice(2, -2);
+    } else {
+      element = document.createElement("em");
+      content = token.slice(1, -1);
+    }
+    element.textContent = content;
+    container.appendChild(element);
+    lastIndex = index + token.length;
+  }
+  appendUnescapedText(container, source.slice(lastIndex));
+}
+
+function appendFormattedText(container, text) {
   const lines = String(text || "").split("\n");
   lines.forEach((line, index) => {
     if (index) container.appendChild(document.createElement("br"));
-    container.appendChild(document.createTextNode(line));
+    appendInlineFormattedLine(container, line);
   });
 }
 
@@ -81,6 +134,186 @@ function safePreviewImageUrl(url) {
     return raw;
   }
   return "";
+}
+
+async function metafileConverter() {
+  if (!metafileConverterPromise) {
+    metafileConverterPromise = import("./vendor/emf-converter/index.mjs");
+  }
+  return metafileConverterPromise;
+}
+
+async function convertMetafileUrl(url, filename) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("无法读取旧版图片");
+  const buffer = await response.arrayBuffer();
+  const converter = await metafileConverter();
+  const options = {
+    dpiScale: 2,
+    maxCanvasDimension: 4096,
+    fontFamilyMap: {
+      "times new roman": "Times New Roman",
+      symbol: "serif",
+      "mt extra": "serif",
+    },
+  };
+  const dataUrl = String(filename || url).toLowerCase().includes(".emf")
+    ? await converter.convertEmfToDataUrl(buffer, undefined, undefined, options)
+    : await converter.convertWmfToDataUrl(buffer, undefined, undefined, options);
+  if (!dataUrl) throw new Error("旧版图片转换失败");
+  const blob = await (await fetch(dataUrl)).blob();
+  const outputName = `${String(filename || "公式").replace(/\.(wmf|emf)$/i, "")}.png`;
+  return {
+    file: new File([blob], outputName, { type: "image/png" }),
+    previewUrl: dataUrl,
+    outputName,
+  };
+}
+
+function replaceAllLiteral(value, replacements) {
+  let result = String(value || "");
+  for (const [original, replacement] of replacements.entries()) {
+    result = result.split(original).join(replacement);
+  }
+  return result;
+}
+
+async function runWithConcurrency(items, limit, handler) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await handler(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function clearConvertedWordUploads() {
+  for (const item of state.uploadItems.filter((candidate) => candidate.source === "word-conversion")) {
+    if (item.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.uploadItems = state.uploadItems.filter((item) => item.source !== "word-conversion");
+}
+
+async function normalizeManualMetafiles(data, onProgress = () => {}) {
+  const metafiles = (data.images || []).filter((item) => METAFILE_RE.test(item.name || item.url));
+  if (!metafiles.length) return { converted: 0, failed: [] };
+  clearConvertedWordUploads();
+  const formulaUrls = new Set((data.formula_items || []).map((item) => item.url));
+  const replacements = new Map();
+  const convertedByUrl = new Map();
+  const failed = [];
+  let finished = 0;
+  await runWithConcurrency(metafiles, 4, async (image) => {
+    try {
+      const converted = await convertMetafileUrl(image.url, image.name);
+      const uniquePart = window.crypto?.randomUUID?.() || `${Date.now()}-${finished}`;
+      const token = `upload-image://${uniquePart}`;
+      const uploadItem = {
+        file: converted.file,
+        token,
+        previewUrl: converted.previewUrl,
+        source: "word-conversion",
+        autoFormula: formulaUrls.has(image.url),
+      };
+      state.uploadItems.push(uploadItem);
+      replacements.set(image.url, token);
+      convertedByUrl.set(image.url, { ...converted, token });
+    } catch (error) {
+      failed.push(image.name);
+    } finally {
+      finished += 1;
+      onProgress(finished, metafiles.length);
+    }
+  });
+
+  for (const name of ["markdown", "text_markdown", "raw_markdown"]) {
+    if (name in data) data[name] = replaceAllLiteral(data[name], replacements);
+  }
+  for (const name of ["question", "answer", "analysis"]) {
+    if (data.sections && name in data.sections) {
+      data.sections[name] = replaceAllLiteral(data.sections[name], replacements);
+    }
+  }
+  data.images = (data.images || []).filter((item) => !convertedByUrl.has(item.url));
+  data.formula_items = (data.formula_items || []).map((item) => {
+    const converted = convertedByUrl.get(item.url);
+    if (!converted) return item;
+    return {
+      ...item,
+      url: converted.token,
+      name: converted.outputName,
+      relative_path: converted.outputName,
+      confirmed: true,
+      auto_kept: true,
+      ocr_error: "",
+    };
+  });
+  return { converted: convertedByUrl.size, failed };
+}
+
+function importTaskMetafiles(task) {
+  const items = [];
+  for (const draft of task?.drafts || []) {
+    for (const image of draft.images || []) {
+      if (!METAFILE_RE.test(image.name || image.url)) continue;
+      items.push({ draft, image });
+    }
+  }
+  return items;
+}
+
+async function normalizeImportTaskMetafiles(task, onProgress = () => {}) {
+  const metafiles = importTaskMetafiles(task);
+  if (!metafiles.length) return { task, converted: 0, failed: [] };
+
+  const prepared = new Array(metafiles.length);
+  const failed = [];
+  let preparedCount = 0;
+  await runWithConcurrency(metafiles, 4, async (entry, index) => {
+    try {
+      prepared[index] = {
+        entry,
+        converted: await convertMetafileUrl(entry.image.url, entry.image.name),
+      };
+    } catch (error) {
+      failed.push(entry.image.name);
+    } finally {
+      preparedCount += 1;
+      onProgress(preparedCount, metafiles.length, "convert");
+    }
+  });
+
+  const preparedItems = prepared.filter(Boolean);
+  let uploadedCount = 0;
+  let processedUploads = 0;
+  for (const item of preparedItems) {
+    const form = new FormData();
+    form.append("file", item.converted.file);
+    const response = await fetch(
+      `/api/import/tasks/${encodeURIComponent(task.id)}` +
+        `/drafts/${encodeURIComponent(item.entry.draft.id)}` +
+        `/images/${encodeURIComponent(item.entry.image.name)}/replace-metafile`,
+      { method: "POST", body: form },
+    );
+    if (!response.ok) {
+      failed.push(item.entry.image.name);
+    } else {
+      uploadedCount += 1;
+    }
+    processedUploads += 1;
+    onProgress(processedUploads, preparedItems.length, "upload");
+  }
+
+  const response = await fetch(`/api/import/tasks/${encodeURIComponent(task.id)}`);
+  const reloaded = await response.json();
+  return {
+    task: response.ok ? reloaded : task,
+    converted: uploadedCount,
+    failed: Array.from(new Set(failed)),
+  };
 }
 
 function renderMath(container, latex, displayMode = false) {
@@ -117,7 +350,7 @@ function renderRichPreview(markdown, container, emptyText = "这里会显示排�
   container.classList.remove("is-empty");
   let lastIndex = 0;
   for (const match of source.matchAll(RICH_CONTENT_RE)) {
-    appendPlainText(container, source.slice(lastIndex, match.index));
+    appendFormattedText(container, source.slice(lastIndex, match.index));
     const token = match[0];
     if (token.startsWith("![")) {
       const imageMatch = token.match(/^!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}\n]*)\})?$/);
@@ -129,8 +362,16 @@ function renderRichPreview(markdown, container, emptyText = "这里会显示排�
           const image = document.createElement("img");
           image.src = imageUrl;
           image.alt = imageMatch[1] || "题目图片";
-          const widthMatch = String(imageMatch[3] || "").match(/width\s*=\s*["']?(\d+)%/);
-          if (widthMatch) image.style.maxWidth = `${Math.min(100, Number(widthMatch[1]))}%`;
+          const widthMatch = String(imageMatch[3] || "").match(
+            /width\s*=\s*["']?([0-9.]+)(%|in|cm|mm|px|pt)/,
+          );
+          if (widthMatch) {
+            image.style.width =
+              widthMatch[2] === "%"
+                ? `${Math.min(100, Number(widthMatch[1]))}%`
+                : `${widthMatch[1]}${widthMatch[2]}`;
+          }
+          image.style.maxWidth = "100%";
           figure.appendChild(image);
         } else {
           figure.textContent = "图片暂时无法预览";
@@ -148,7 +389,7 @@ function renderRichPreview(markdown, container, emptyText = "这里会显示排�
     }
     lastIndex = Number(match.index) + token.length;
   }
-  appendPlainText(container, source.slice(lastIndex));
+  appendFormattedText(container, source.slice(lastIndex));
 }
 
 function renderManualPreviews() {
@@ -266,18 +507,24 @@ function setSaveEnabled() {
 }
 
 function setUploadItems(fileList) {
-  for (const item of state.uploadItems) {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  const convertedWordUploads = state.uploadItems.filter(
+    (item) => item.source === "word-conversion",
+  );
+  for (const item of state.uploadItems.filter((candidate) => candidate.source !== "word-conversion")) {
+    if (item.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
   }
-  state.uploadItems = Array.from(fileList || []).map((file, index) => {
+  const manualUploads = Array.from(fileList || []).map((file, index) => {
     const isImage = file.type.startsWith("image/");
     const uniquePart = window.crypto?.randomUUID?.() || `${Date.now()}-${index}`;
     return {
       file,
       token: isImage ? `upload-image://${uniquePart}` : "",
       previewUrl: isImage ? URL.createObjectURL(file) : "",
+      source: "manual",
+      autoFormula: false,
     };
   });
+  state.uploadItems = convertedWordUploads.concat(manualUploads);
 }
 
 function imageLocations(url, fieldIds = MANUAL_SECTION_IDS) {
@@ -368,11 +615,18 @@ function imagePreviewCard({
 function renderImagePreview() {
   const holder = $("imagePreview");
   holder.innerHTML = "";
-  const uploads = state.uploadItems.filter((item) => item.previewUrl);
+  const uploads = state.uploadItems.filter((item) => item.previewUrl && !item.autoFormula);
+  const formulaImageCount = state.uploadItems.filter((item) => item.autoFormula).length;
   const hasWordImages = state.wordDraftImages.length > 0;
-  if (!uploads.length && !hasWordImages) {
+  if (!uploads.length && !hasWordImages && !formulaImageCount) {
     holder.textContent = "没有图片。";
     return;
+  }
+  if (formulaImageCount) {
+    const note = document.createElement("div");
+    note.className = "inline-note";
+    note.textContent = `已随正文保留 ${formulaImageCount} 张旧版公式图片，无需逐张处理。`;
+    holder.appendChild(note);
   }
   for (const image of state.wordDraftImages) {
     holder.appendChild(
@@ -409,7 +663,7 @@ function renderImagePreview() {
 
 function placeUnassignedUploads() {
   for (const item of state.uploadItems) {
-    if (!item.previewUrl || imageLocations(item.token).length) continue;
+    if (!item.previewUrl || item.autoFormula || imageLocations(item.token).length) continue;
     const current = $("questionText").value.trim();
     $("questionText").value =
       `${current}${current ? "\n\n" : ""}![题图](${item.token}){width=70%}`.trim();
@@ -517,13 +771,14 @@ function renderFormulaPanel() {
   const panel = $("formulaPanel");
   const list = $("formulaList");
   list.innerHTML = "";
-  if (!state.formulaItems.length) {
+  const pendingItems = state.formulaItems.filter((item) => !item.auto_kept);
+  if (!pendingItems.length) {
     panel.classList.add("hidden");
     setSaveEnabled();
     return;
   }
   panel.classList.remove("hidden");
-  for (const item of state.formulaItems) {
+  for (const item of pendingItems) {
     const row = document.createElement("div");
     row.className = "formula-item";
 
@@ -640,16 +895,31 @@ async function convertWordToMarkdown() {
 
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch("/api/convert-docx", { method: "POST", body: form });
-  const data = await response.json();
-
-  button.disabled = false;
-  button.textContent = originalText;
-
-  if (!response.ok) {
-    alert(data.detail || "读取 Word 失败。");
-    return;
+  let data;
+  let metafileResult = { converted: 0, failed: [] };
+  try {
+    const response = await fetch("/api/convert-docx", { method: "POST", body: form });
+    data = await response.json();
+    if (!response.ok) {
+      alert(data.detail || "读取 Word 失败。");
+      return;
+    }
+    const metafileCount = (data.images || []).filter((item) =>
+      METAFILE_RE.test(item.name || item.url),
+    ).length;
+    if (metafileCount) {
+      button.textContent = `正在处理旧版公式（0/${metafileCount}）…`;
+      metafileResult = await normalizeManualMetafiles(data, (finished, total) => {
+        button.textContent = `正在处理旧版公式（${finished}/${total}）…`;
+      });
+    } else {
+      clearConvertedWordUploads();
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
   }
+  if (!data) return;
 
   const sections = data.sections || {};
   const fallback = data.markdown || "";
@@ -669,7 +939,8 @@ async function convertWordToMarkdown() {
   state.wordDraftImages = data.images || [];
   state.formulaItems = (data.formula_items || []).map((item) => ({
     ...item,
-    decision: "",
+    decision: item.auto_kept ? "keep" : "",
+    confirmed: Boolean(item.auto_kept || item.confirmed),
     appliedMarkup: "",
     convertedFields: [],
     originalMarkup: {},
@@ -685,9 +956,15 @@ async function convertWordToMarkdown() {
     setSaveEnabled();
   }
 
-  const warnings = data.warnings || [];
+  const warnings = [...(data.warnings || [])];
+  if (metafileResult.converted) {
+    warnings.push(`已自动转换 ${metafileResult.converted} 张旧版公式或题图，现在可以正常预览和入库。`);
+  }
+  if (metafileResult.failed.length) {
+    warnings.push(`仍有 ${metafileResult.failed.length} 张旧版图片无法转换，请在预览中人工检查。`);
+  }
   if (warnings.length) {
-    alert(`内容已读取，请检查：\n\n${warnings.join("\n")}`);
+    alert(`Word 已读取：\n\n${Array.from(new Set(warnings)).join("\n")}`);
   }
 }
 
@@ -778,7 +1055,10 @@ function renderExamSelection() {
     const order = document.createElement("strong");
     order.textContent = String(index + 1);
     const title = document.createElement("span");
-    title.textContent = `${questionId} · ${item["题型"] || "未指定题型"} · ${item.preview || ""}`;
+    title.appendChild(
+      document.createTextNode(`${questionId} · ${item["题型"] || "未指定题型"} · `),
+    );
+    appendFormattedText(title, item.preview || "");
     const label = document.createElement("input");
     label.value = state.displayLabels.get(questionId) || String(index + 1);
     label.title = "试卷上的展示题号";
@@ -864,9 +1144,13 @@ function renderResults(items) {
       item.preview || "",
     ];
     row.appendChild(checkboxCell);
-    for (const value of values) {
+    for (const [index, value] of values.entries()) {
       const cell = document.createElement("td");
-      cell.textContent = value;
+      if (index === values.length - 1) {
+        appendFormattedText(cell, value);
+      } else {
+        cell.textContent = value;
+      }
       row.appendChild(cell);
     }
     const actionCell = document.createElement("td");
@@ -963,7 +1247,7 @@ function renderAssistantRecommendations(data) {
     heading.append(title, add);
     const preview = document.createElement("div");
     preview.className = "assistant-preview";
-    preview.textContent = item.preview || "暂无题目预览";
+    appendFormattedText(preview, item.preview || "暂无题目预览");
     const reason = document.createElement("div");
     reason.className = "assistant-reason";
     reason.textContent = `推荐理由：${item.reason}；预计 ${item.estimated_minutes} 分钟`;
@@ -1560,9 +1844,15 @@ function renderImportDrafts() {
       for (const image of draft.images) {
         const imageCard = document.createElement("div");
         imageCard.className = "import-image-card";
-        const preview = document.createElement("img");
-        preview.src = image.url;
-        preview.alt = image.name;
+        const isMetafile = METAFILE_RE.test(image.name || image.url);
+        const preview = isMetafile ? document.createElement("div") : document.createElement("img");
+        if (isMetafile) {
+          preview.className = "draft-warning";
+          preview.textContent = "这张旧版公式图片未能自动转换，请保留原 Word 对照检查。";
+        } else {
+          preview.src = image.url;
+          preview.alt = image.name;
+        }
         const buttons = document.createElement("div");
         buttons.className = "action-group";
         for (const [action, label] of [
@@ -1577,6 +1867,7 @@ function renderImportDrafts() {
           button.type = "button";
           button.className = "ghost compact";
           button.textContent = label;
+          button.disabled = isMetafile && action !== "delete";
           button.addEventListener("click", () => {
             if (action === "delete" && !confirm("移除这张图片吗？")) return;
             processImportImage(draft.id, image.name, action);
@@ -1659,29 +1950,68 @@ async function analyzeImportFile() {
   if (answerFile) form.append("answer_file", answerFile);
   $("analyzeImportBtn").disabled = true;
   $("importResult").textContent = "正在读取文件并切分题目…";
-  const response = await fetch("/api/import/analyze", { method: "POST", body: form });
-  const data = await response.json();
-  $("analyzeImportBtn").disabled = false;
-  if (!response.ok) {
-    $("importResult").textContent = data.detail || "导入分析失败";
-    return;
+  try {
+    const response = await fetch("/api/import/analyze", { method: "POST", body: form });
+    let data = await response.json();
+    if (!response.ok) {
+      $("importResult").textContent = data.detail || "导入分析失败";
+      return;
+    }
+    const metafileCount = importTaskMetafiles(data).length;
+    let conversion = { task: data, converted: 0, failed: [] };
+    if (metafileCount) {
+      $("importResult").textContent = `正在处理旧版公式和题图（共 ${metafileCount} 张）…`;
+      conversion = await normalizeImportTaskMetafiles(data, (finished, total, phase) => {
+        $("importResult").textContent =
+          phase === "convert"
+            ? `正在转换旧版公式和题图（${finished}/${total}）…`
+            : `正在保存已转换图片（${finished}/${total}）…`;
+      });
+      data = conversion.task;
+    }
+    state.importTask = data;
+    const conversionText = conversion.converted
+      ? ` 已自动处理 ${conversion.converted} 张旧版公式或题图。`
+      : "";
+    const failedText = conversion.failed.length
+      ? ` 仍有 ${conversion.failed.length} 张图片需人工检查。`
+      : "";
+    $("importResult").textContent =
+      `已生成 ${data.drafts?.length || 0} 道待审核草稿。${conversionText}${failedText}` +
+      " 请逐题核对后再入库。";
+    renderImportDrafts();
+    await loadImportStatus();
+  } catch (error) {
+    $("importResult").textContent = `导入失败：${error.message || "请稍后重试"}`;
+  } finally {
+    $("analyzeImportBtn").disabled = false;
   }
-  state.importTask = data;
-  $("importResult").textContent =
-    `已生成 ${data.drafts?.length || 0} 道待审核草稿。请逐题对照原文，勾选“已核对”后再入库。`;
-  renderImportDrafts();
-  await loadImportStatus();
 }
 
 async function loadImportTask(taskId) {
   const response = await fetch(`/api/import/tasks/${encodeURIComponent(taskId)}`);
-  const data = await response.json();
+  let data = await response.json();
   if (!response.ok) {
     alert(data.detail || "读取导入任务失败");
     return;
   }
+  const metafileCount = importTaskMetafiles(data).length;
+  let conversion = { task: data, converted: 0, failed: [] };
+  if (metafileCount) {
+    $("importResult").textContent = `正在补充处理 ${metafileCount} 张旧版公式或题图…`;
+    conversion = await normalizeImportTaskMetafiles(data, (finished, total, phase) => {
+      $("importResult").textContent =
+        phase === "convert"
+          ? `正在转换旧版公式和题图（${finished}/${total}）…`
+          : `正在保存已转换图片（${finished}/${total}）…`;
+    });
+    data = conversion.task;
+  }
   state.importTask = data;
-  $("importResult").textContent = `正在继续审核 ${data.source}，任务状态：${data.status}。`;
+  $("importResult").textContent =
+    `正在继续审核 ${data.source}，任务状态：${data.status}。` +
+    (conversion.converted ? ` 已补充处理 ${conversion.converted} 张旧版图片。` : "") +
+    (conversion.failed.length ? ` 仍有 ${conversion.failed.length} 张需人工检查。` : "");
   renderImportDrafts();
   document.querySelector(".import-center")?.scrollIntoView({ behavior: "smooth" });
 }

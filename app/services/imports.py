@@ -356,7 +356,7 @@ def _materialize_chunk(
     assets: dict[str, Path],
     include_all_assets: bool = False,
 ) -> tuple[str, str, list[dict[str, str]]]:
-    urls = [match.group(1) for match in MARKDOWN_IMAGE_RE.finditer(chunk)]
+    urls = list(dict.fromkeys(match.group(1) for match in MARKDOWN_IMAGE_RE.finditer(chunk)))
     if include_all_assets:
         for name in assets:
             if not any(Path(url.replace("\\", "/")).name == name for url in urls):
@@ -830,6 +830,57 @@ def process_draft_image(
     task["updated_at"] = datetime.now().astimezone().isoformat()
     save_import_task(task)
     return {"image": image, **result}
+
+
+async def replace_draft_metafile(
+    task_id: str,
+    draft_item_id: str,
+    image_name: str,
+    upload: UploadFile,
+) -> dict[str, Any]:
+    task = load_import_task(task_id)
+    draft = next((item for item in task["drafts"] if item["id"] == draft_item_id), None)
+    if draft is None:
+        raise NotFoundError("导入草稿不存在。")
+    original_name = Path(image_name).name
+    if Path(original_name).suffix.lower() not in {".wmf", ".emf"}:
+        raise AppError("这张图片不需要转换。")
+    image = next((item for item in draft.get("images", []) if item["name"] == original_name), None)
+    if image is None or not draft.get("draft_id"):
+        raise NotFoundError("草稿图片不存在。")
+    draft_dir = config.DRAFT_ASSETS_DIR / str(draft["draft_id"])
+    source = draft_dir / original_name
+    if not source.is_file():
+        raise NotFoundError("草稿图片文件不存在。")
+    if not upload.filename or Path(upload.filename).suffix.lower() != ".png":
+        raise AppError("转换结果必须是 PNG 图片。")
+
+    converted_name = f"{Path(original_name).stem}.png"
+    target = draft_dir / converted_name
+    try:
+        upload.file.seek(0)
+        questions._save_raster_as_png(upload.file, target)
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise AppError("公式图片转换结果无法读取。") from exc
+
+    old_url = str(image.get("url") or f"/draft-assets/{draft['draft_id']}/{original_name}")
+    old_url = old_url.split("?", 1)[0]
+    new_url = f"/draft-assets/{draft['draft_id']}/{converted_name}"
+    for field in ("question", "answer", "analysis", "remarks"):
+        draft[field] = str(draft.get(field) or "").replace(old_url, new_url)
+    image["name"] = converted_name
+    image["relative_path"] = converted_name
+    image["url"] = new_url
+    draft["formula_image_names"] = [
+        converted_name if item == original_name else item
+        for item in draft.get("formula_image_names", [])
+    ]
+    source.unlink(missing_ok=True)
+    draft["confirmed"] = False
+    task["updated_at"] = datetime.now().astimezone().isoformat()
+    save_import_task(task)
+    return {"image": image, "original_name": original_name, "converted_name": converted_name}
 
 
 def merge_import_drafts(task_id: str, first_id: str, second_id: str) -> dict[str, Any]:

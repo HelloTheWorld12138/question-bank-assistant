@@ -131,8 +131,12 @@ def run_formula_ocr(path: Path, timeout: int = 60) -> tuple[str, str]:
 
 def detect_formula_items(markdown: str, draft_dir: Path, draft_id: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
     for index, match in enumerate(IMAGE_RE.finditer(markdown), start=1):
         url = match.group(1)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
         path = local_path_from_markdown_url(url, draft_dir, draft_id)
         if not path:
             continue

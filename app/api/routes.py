@@ -147,6 +147,21 @@ def process_import_image(
     return import_service.process_draft_image(task_id, draft_id, image_name, payload)
 
 
+@api_router.post("/import/tasks/{task_id}/drafts/{draft_id}/images/{image_name}/replace-metafile")
+async def replace_import_metafile(
+    task_id: str,
+    draft_id: str,
+    image_name: str,
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    return await import_service.replace_draft_metafile(
+        task_id,
+        draft_id,
+        image_name,
+        file,
+    )
+
+
 @api_router.post("/import/tasks/{task_id}/merge")
 def merge_import_drafts(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return import_service.merge_import_drafts(

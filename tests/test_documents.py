@@ -89,3 +89,17 @@ def test_pandoc_keeps_editable_word_equation_as_latex(isolated_data, tmp_path, m
     assert "$F=ma$" in compact
     assert "\\frac{F}{m}" in compact
     assert any("可编辑" in warning for warning in result["warnings"])
+
+
+def test_normalize_converted_markdown_keeps_emphasis_and_converts_html_image():
+    markdown = (
+        '万有引力的大小为 *F*。\n\n'
+        '<img src="/tmp/media/image2.png" '
+        'style="width:5.77in;height:1.17in" alt="@@@DRAWING-ID" />'
+    )
+
+    normalized = documents.normalize_converted_markdown(markdown, "")
+
+    assert "*F*" in normalized
+    assert '<img src=' not in normalized
+    assert "![题图](/tmp/media/image2.png){width=5.77in height=1.17in}" in normalized
