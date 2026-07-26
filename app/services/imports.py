@@ -17,6 +17,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from app import config, storage
 from app.errors import AppError, NotFoundError
+from app.math_ocr import detect_formula_items
 from app.services import documents, questions
 
 
@@ -186,9 +187,9 @@ def ocr_status() -> dict[str, Any]:
         "engine": "PaddleOCR 3" if ocr_available() else "",
         "offline": True,
         "message": (
-            "本地 PaddleOCR 已可用"
+            "可以识别扫描件和照片"
             if ocr_available()
-            else "未安装离线 OCR；数字 PDF 和 Word 仍可导入，照片将保留原图供人工录入"
+            else "Word 和文字版 PDF 可正常导入；照片会保留原图，请人工填写文字"
         ),
     }
 
@@ -297,10 +298,10 @@ def _extract_pdf_pages(path: Path, work_dir: Path) -> list[dict[str, Any]]:
                 assets[name] = image_path
                 if ocr_available():
                     text, confidence = run_local_ocr(image_path)
-                    warnings.append("扫描页已使用本地 OCR，请重点检查数字、单位和公式。")
+                    warnings.append("扫描页已识别，请重点核对数字、单位、上下标和公式。")
                 else:
                     confidence = 0.0
-                    warnings.append("该页没有可提取文字且未安装本地 OCR，请对照原页人工录入。")
+                    warnings.append("该页未识别到文字，已保留原图，请人工填写。")
                 text = f"{text.strip()}\n\n{_image_markdown(name)}".strip()
             pages.append(
                 {
@@ -325,9 +326,9 @@ def _extract_image_page(path: Path, work_dir: Path) -> list[dict[str, Any]]:
     warnings = []
     if ocr_available():
         text, confidence = run_local_ocr(processed)
-        warnings.append("照片已使用本地 OCR，请重点检查数字、单位、上下标和公式。")
+        warnings.append("照片已识别，请重点核对数字、单位、上下标和公式。")
     else:
-        warnings.append("未安装本地 OCR，已保留原图，请人工填写题目文字。")
+        warnings.append("照片已保留，请人工填写题目文字。")
     return [
         {
             "page": 1,
@@ -441,7 +442,18 @@ def _draft_from_chunk(
         question_type = _infer_question_type(question_text)
     warning_items = list(warnings)
     if confidence < 0.75:
-        warning_items.append("识别置信度较低，必须对照原文检查。")
+        warning_items.append("识别结果可能不准，请对照原文检查。")
+    formula_items = (
+        detect_formula_items(
+            "\n\n".join([question_text, parsed["answer"], parsed["analysis"]]),
+            config.DRAFT_ASSETS_DIR / draft_id,
+            draft_id,
+        )
+        if draft_id
+        else []
+    )
+    if formula_items:
+        warning_items.append(f"发现 {len(formula_items)} 张可能包含公式的图片，批量入库时会保留原图。")
     return {
         "id": str(uuid.uuid4()),
         "original_number": chunk_info.get("original_number", ""),
@@ -465,6 +477,7 @@ def _draft_from_chunk(
         "answer_match": "embedded" if parsed["answer"] else "unmatched",
         "draft_id": draft_id,
         "images": images,
+        "formula_image_names": [item["name"] for item in formula_items],
         "confirmed": False,
         "committed_id": "",
     }
@@ -756,6 +769,7 @@ async def commit_import_task(task_id: str, payload: dict[str, Any]) -> dict[str,
             question_type=str(draft.get("question_type") or ""),
             remarks=str(draft.get("remarks") or ""),
             draft_id=str(draft.get("draft_id") or ""),
+            approved_formula_images=[item.get("name", "") for item in draft.get("images", [])],
             files=[],
         )
         draft["committed_id"] = result["id"]
@@ -784,6 +798,25 @@ def process_draft_image(
     if not path.exists():
         raise NotFoundError("草稿图片文件不存在。")
     action = str(payload.get("action") or "enhance")
+    if action == "delete":
+        raw_url = str(image.get("url") or f"/draft-assets/{draft['draft_id']}/{image['name']}")
+        for field in ("question", "answer", "analysis", "remarks"):
+            content = str(draft.get(field) or "")
+            content = re.sub(
+                rf"!\[[^\]]*\]\({re.escape(raw_url.split('?', 1)[0])}(?:\?[^)]*)?\)(?:\{{[^}}\n]*\}})?",
+                "",
+                content,
+            )
+            draft[field] = re.sub(r"\n{3,}", "\n\n", content).strip()
+        path.unlink(missing_ok=True)
+        draft["images"] = [item for item in draft.get("images", []) if item["name"] != image["name"]]
+        draft["formula_image_names"] = [
+            item for item in draft.get("formula_image_names", []) if item != image["name"]
+        ]
+        draft["confirmed"] = False
+        task["updated_at"] = datetime.now().astimezone().isoformat()
+        save_import_task(task)
+        return {"deleted": True, "name": image["name"]}
     rotation = {"rotate_left": -90, "rotate_right": 90}.get(action, float(payload.get("rotation") or 0))
     result = preprocess_image(
         path,

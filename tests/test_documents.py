@@ -1,5 +1,7 @@
 import asyncio
 import io
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -40,7 +42,7 @@ def test_docx_conversion_falls_back_without_agent_or_formula_ocr(isolated_data, 
     assert result["sections"]["question"] == "一物体做匀加速运动。"
     assert result["sections"]["answer"] == "A"
     assert result["agent_used"] is False
-    assert any("离线规则解析" in warning for warning in result["warnings"])
+    assert any("按原文读取" in warning for warning in result["warnings"])
 
 
 def test_docx_conversion_falls_back_when_agent_crashes(isolated_data, monkeypatch):
@@ -68,4 +70,22 @@ def test_docx_conversion_falls_back_when_agent_crashes(isolated_data, monkeypatc
     assert result["sections"]["question"] == "题目正文"
     assert result["sections"]["answer"] == "B"
     assert result["agent_used"] is False
-    assert any("规则解析" in warning for warning in result["warnings"])
+    assert any("按原文读取" in warning for warning in result["warnings"])
+
+
+def test_pandoc_keeps_editable_word_equation_as_latex(isolated_data, tmp_path, monkeypatch):
+    pandoc = shutil.which("pandoc")
+    if not pandoc:
+        return
+    source = tmp_path / "formula.md"
+    word = tmp_path / "formula.docx"
+    source.write_text("由 $F=ma$ 可得 $a=\\frac{F}{m}$。", encoding="utf-8")
+    subprocess.run([pandoc, str(source), "-o", str(word)], check=True)
+    monkeypatch.setattr(documents, "opencode_available", lambda: False)
+
+    result = documents.convert_docx_path(word)
+
+    compact = result["markdown"].replace(" ", "")
+    assert "$F=ma$" in compact
+    assert "\\frac{F}{m}" in compact
+    assert any("可编辑" in warning for warning in result["warnings"])

@@ -10,12 +10,28 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
+from PIL import Image, ImageOps
 
 from app import config, storage
 from app.errors import AppError
-from app.math_ocr import detect_formula_items
+from app.math_ocr import detect_formula_items, math_delimiter_issue
 from app.services import office
 from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc
+
+
+RASTER_IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+}
+IMAGE_WITH_ATTRIBUTES_RE = re.compile(
+    r"(!\[[^\]]*\]\([^)]+\))(?P<spacing>[ \t]*)(?P<attributes>\{[^}\n]*\})?"
+)
 
 
 @contextmanager
@@ -42,29 +58,67 @@ def next_question_id(block_code: str, type_code: str) -> str:
         return question_id
 
 
-async def save_uploads(question_id: str, uploads: list[UploadFile], start_index: int = 1) -> list[str]:
+def _save_raster_as_png(source: Any, target: Path) -> None:
+    with Image.open(source) as opened:
+        opened.seek(0)
+        image = ImageOps.exif_transpose(opened)
+        if image.mode in {"CMYK", "P"}:
+            image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+        elif image.mode not in {"1", "L", "LA", "RGB", "RGBA"}:
+            image = image.convert("RGB")
+        image.save(target, format="PNG", optimize=True, dpi=(150, 150))
+
+
+def _image_target_name(question_id: str, number: int, source: Path) -> str:
+    suffix = ".png" if source.suffix.lower() in RASTER_IMAGE_EXTENSIONS else source.suffix.lower()
+    return f"{question_id}_{number:02d}{suffix}"
+
+
+async def save_uploads(
+    question_id: str,
+    uploads: list[UploadFile],
+    start_index: int = 1,
+    upload_tokens: list[str] | None = None,
+    referenced_markdown: str = "",
+) -> tuple[list[str], dict[str, str]]:
     saved: list[str] = []
+    link_map: dict[str, str] = {}
     image_count = start_index
     doc_count = 1
-    for upload in uploads:
+    tokens = upload_tokens or []
+    for upload_index, upload in enumerate(uploads):
         if not upload.filename:
             continue
         source_name = Path(upload.filename)
         ext = source_name.suffix.lower() or ".bin"
+        token = tokens[upload_index] if upload_index < len(tokens) else ""
         if ext in config.IMAGE_EXTENSIONS:
-            filename = f"{question_id}_{image_count:02d}{ext}"
+            if token and token not in referenced_markdown:
+                continue
+            filename = _image_target_name(question_id, image_count, source_name)
             image_count += 1
             saved.append(filename)
         else:
             filename = f"{question_id}_附件{doc_count}{ext}"
             doc_count += 1
         target = config.ASSETS_DIR / filename
-        with target.open("wb") as buffer:
-            shutil.copyfileobj(upload.file, buffer)
-    return saved
+        upload.file.seek(0)
+        if ext in RASTER_IMAGE_EXTENSIONS:
+            _save_raster_as_png(upload.file, target)
+        else:
+            with target.open("wb") as buffer:
+                shutil.copyfileobj(upload.file, buffer)
+        if token and ext in config.IMAGE_EXTENSIONS:
+            link_map[token] = filename
+    return saved, link_map
 
 
-def finalize_draft_images(question_id: str, draft_id: str, start_index: int = 1) -> tuple[list[str], dict[str, str]]:
+def finalize_draft_images(
+    question_id: str,
+    draft_id: str,
+    referenced_markdown: str,
+    start_index: int = 1,
+) -> tuple[list[str], dict[str, str]]:
     if not draft_id or not re.fullmatch(r"[a-f0-9-]{36}", draft_id):
         return [], {}
     draft_dir = config.DRAFT_ASSETS_DIR / draft_id
@@ -74,13 +128,23 @@ def finalize_draft_images(question_id: str, draft_id: str, start_index: int = 1)
     saved: list[str] = []
     link_map: dict[str, str] = {}
     image_count = start_index
+    referenced_names = {
+        Path(match.group(1).split("?", 1)[0].replace("\\", "/")).name
+        for match in IMAGE_MARKDOWN_RE.finditer(referenced_markdown)
+    }
     for source in sorted(draft_dir.rglob("*")):
         if not source.is_file() or source.suffix.lower() not in config.IMAGE_EXTENSIONS:
             continue
-        filename = f"{question_id}_{image_count:02d}{source.suffix.lower()}"
-        shutil.copy2(source, config.ASSETS_DIR / filename)
-        saved.append(filename)
         relative = source.relative_to(draft_dir).as_posix()
+        if source.name not in referenced_names and relative not in referenced_names:
+            continue
+        filename = _image_target_name(question_id, image_count, source)
+        target = config.ASSETS_DIR / filename
+        if source.suffix.lower() in RASTER_IMAGE_EXTENSIONS:
+            _save_raster_as_png(source, target)
+        else:
+            shutil.copy2(source, target)
+        saved.append(filename)
         link_map[relative] = filename
         link_map[source.name] = filename
         image_count += 1
@@ -105,6 +169,42 @@ def rewrite_draft_image_links(markdown: str, draft_id: str, link_map: dict[str, 
     return IMAGE_MARKDOWN_RE.sub(replace, markdown)
 
 
+def rewrite_upload_image_links(markdown: str, link_map: dict[str, str]) -> str:
+    text = markdown
+    for token, filename in link_map.items():
+        text = text.replace(f"]({token})", f"](../assets/{filename})")
+    return text
+
+
+def normalize_approved_formula_images(value: str | list[str] | None) -> set[str]:
+    if isinstance(value, list):
+        items = value
+    else:
+        raw = str(value or "").strip()
+        if not raw:
+            return set()
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = [item for item in raw.splitlines() if item.strip()]
+        items = parsed if isinstance(parsed, list) else []
+    approved: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        approved.add(text)
+        approved.add(Path(text.split("?", 1)[0].replace("\\", "/")).name)
+    return approved
+
+
+def ensure_valid_math(*sections: str) -> None:
+    for name, content in zip(("题目", "答案", "解析", "备注"), sections):
+        issue = math_delimiter_issue(content)
+        if issue:
+            raise AppError(f"{name}中的公式格式需要检查：{issue}")
+
+
 async def create_question(
     *,
     block_code: str,
@@ -122,25 +222,60 @@ async def create_question(
     remarks: str = "",
     draft_id: str = "",
     files: list[UploadFile] | None = None,
+    approved_formula_images: str | list[str] | None = None,
+    upload_image_tokens: str | list[str] | None = None,
 ) -> dict[str, Any]:
     storage.ensure_dirs()
     if question_type and question_type not in config.QUESTION_TYPES:
         raise AppError("未知题型")
+    ensure_valid_math(question_text, answer_text, analysis_text, remarks)
+    approved = normalize_approved_formula_images(approved_formula_images)
     if draft_id and re.fullmatch(r"[a-f0-9-]{36}", draft_id):
         draft_dir = config.DRAFT_ASSETS_DIR / draft_id
         if draft_dir.exists():
             submitted_markdown = "\n\n".join([question_text, answer_text, analysis_text])
-            unresolved_formulas = detect_formula_items(submitted_markdown, draft_dir, draft_id)
+            unresolved_formulas = [
+                item
+                for item in detect_formula_items(submitted_markdown, draft_dir, draft_id)
+                if item["url"] not in approved and item["name"] not in approved
+            ]
             if unresolved_formulas:
                 names = "、".join(item["name"] for item in unresolved_formulas[:3])
-                raise AppError(f"还有疑似公式图片未替换为 LaTeX，不能入库：{names}")
+                raise AppError(f"请先处理这些疑似公式图片：{names}")
 
     with reserve_question_id(block_code, type_code) as question_id:
-        images, draft_image_map = finalize_draft_images(question_id, draft_id)
-        images.extend(await save_uploads(question_id, files or [], start_index=len(images) + 1))
+        submitted_markdown = "\n\n".join([question_text, answer_text, analysis_text, remarks])
+        images, draft_image_map = finalize_draft_images(
+            question_id,
+            draft_id,
+            submitted_markdown,
+        )
+        if isinstance(upload_image_tokens, str):
+            try:
+                parsed_tokens = json.loads(upload_image_tokens)
+            except json.JSONDecodeError:
+                parsed_tokens = []
+            tokens = [str(item or "") for item in parsed_tokens] if isinstance(parsed_tokens, list) else []
+        elif isinstance(upload_image_tokens, list):
+            tokens = [str(item or "") for item in upload_image_tokens]
+        else:
+            tokens = []
+        uploaded_images, upload_image_map = await save_uploads(
+            question_id,
+            files or [],
+            start_index=len(images) + 1,
+            upload_tokens=tokens,
+            referenced_markdown=submitted_markdown,
+        )
+        images.extend(uploaded_images)
         question_text = rewrite_draft_image_links(question_text, draft_id, draft_image_map)
         answer_text = rewrite_draft_image_links(answer_text, draft_id, draft_image_map)
         analysis_text = rewrite_draft_image_links(analysis_text, draft_id, draft_image_map)
+        remarks = rewrite_draft_image_links(remarks, draft_id, draft_image_map)
+        question_text = rewrite_upload_image_links(question_text, upload_image_map)
+        answer_text = rewrite_upload_image_links(answer_text, upload_image_map)
+        analysis_text = rewrite_upload_image_links(analysis_text, upload_image_map)
+        remarks = rewrite_upload_image_links(remarks, upload_image_map)
 
         main_type = config.TYPES[type_code]
         type_names = [main_type]
@@ -239,6 +374,7 @@ def _numeric_sort_value(value: Any) -> tuple[int, float | str]:
 
 def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     metadata, sections = storage.read_question(question_id)
+    previous_images = {Path(str(item)).name for item in metadata.get("图片", []) or []}
     metadata_updates = payload.get("metadata") or {}
     section_updates = payload.get("sections") or {}
     if not isinstance(metadata_updates, dict) or not isinstance(section_updates, dict):
@@ -272,7 +408,15 @@ def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]
     for key in storage.SECTION_NAMES:
         if key in section_updates:
             sections[key] = str(section_updates[key] or "")
+    ensure_valid_math(*(sections.get(key, "") for key in storage.SECTION_NAMES))
+
+    next_images = {Path(str(item)).name for item in metadata_updates.get("图片", previous_images) or []}
+    if not next_images.issubset(previous_images):
+        raise AppError("不能通过普通编辑添加未知图片")
     path = storage.write_question(question_id, metadata, sections)
+    for filename in previous_images - next_images:
+        if filename.startswith(f"{question_id}_"):
+            (config.ASSETS_DIR / filename).unlink(missing_ok=True)
     return {"id": question_id, "file": str(path), "metadata": storage.read_question(question_id)[0]}
 
 
@@ -401,7 +545,14 @@ def rewrite_export_image_links(markdown: str, image_names: list[str]) -> str:
             return match.group(0)
         return match.group(0).replace(raw_url, (config.ASSETS_DIR / filename).as_posix())
 
-    return IMAGE_MARKDOWN_RE.sub(replace, markdown)
+    rewritten = IMAGE_MARKDOWN_RE.sub(replace, markdown)
+
+    def add_default_width(match: re.Match[str]) -> str:
+        if match.group("attributes"):
+            return match.group(0)
+        return f"{match.group(1)}{{width=70%}}"
+
+    return IMAGE_WITH_ATTRIBUTES_RE.sub(add_default_width, rewritten)
 
 
 def page_break_markdown() -> str:
@@ -492,7 +643,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             section_blob = "\n".join(sections.values())
             for image in image_names:
                 if str(image) not in section_blob:
-                    parts.extend([f"![]({(config.ASSETS_DIR / image).as_posix()})", ""])
+                    parts.extend([f"![]({(config.ASSETS_DIR / image).as_posix()}){{width=70%}}", ""])
         exported_questions.append(
             {
                 "label": label,
@@ -547,7 +698,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             [
                 pandoc_path,
                 str(exam_md),
-                "--from=gfm+tex_math_dollars+raw_attribute",
+                "--from=markdown+tex_math_dollars+raw_attribute+link_attributes",
                 "--standalone",
                 f"--resource-path={config.ASSETS_DIR}",
                 f"--reference-doc={template_path}",
@@ -563,9 +714,9 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             docx_created = True
             export_engine = "pandoc"
         else:
-            pandoc_message = completed.stderr.strip() or "Pandoc 导出失败"
+            pandoc_message = "Word 生成失败，请检查题目中的公式和图片。"
     else:
-        pandoc_message = "未检测到 Pandoc，已生成 exam.md；如需 Word，请先安装 Pandoc。"
+        pandoc_message = "Word 组件不可用，已生成备用文件。请重新启动应用后再试。"
 
     if docx_created and office_status.get("available"):
         export_engine = "pandoc+officecli"
@@ -579,9 +730,9 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             office.render_html(exam_docx, preview_path)
             preview_filename = preview_path.name
         except AppError as exc:
-            office_message = f"Word 已生成，但 OfficeCLI 复核未完成：{exc.message}"
+            office_message = f"Word 已生成，但自动排版检查未完成：{exc.message}"
     elif docx_created:
-        office_message = "未检测到 OfficeCLI，已保留 Pandoc 生成的 Word 文件。"
+        office_message = "Word 已生成；本次未执行自动排版检查。"
 
     return {
         "exam_md": f"exports/{exam_md.name}",

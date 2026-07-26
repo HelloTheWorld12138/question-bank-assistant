@@ -1,9 +1,12 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
+from starlette.datastructures import UploadFile
 
 from app import config, storage
 from app.errors import AppError
@@ -92,6 +95,78 @@ def test_export_rewrites_question_image_to_absolute_path(isolated_data):
     assert image_path.as_posix() in rewritten
 
 
+def test_formula_image_can_be_kept_and_unused_draft_image_is_discarded(isolated_data):
+    draft_id = "276a6876-3a0e-4fb2-b018-c161d33ebaa7"
+    draft_dir = config.DRAFT_ASSETS_DIR / draft_id
+    draft_dir.mkdir(parents=True)
+    formula = draft_dir / "formula.png"
+    unused = draft_dir / "unused.png"
+    Image.new("RGB", (120, 40), "white").save(formula)
+    Image.new("RGB", (800, 600), "white").save(unused)
+    formula_url = f"/draft-assets/{draft_id}/{formula.name}"
+    question_text = f"求加速度。\n\n![公式]({formula_url})"
+
+    with pytest.raises(AppError, match="请先处理"):
+        asyncio.run(
+            questions.create_question(
+                block_code="LX",
+                type_code="JC",
+                question_text=question_text,
+                draft_id=draft_id,
+            )
+        )
+
+    created = asyncio.run(
+        questions.create_question(
+            block_code="LX",
+            type_code="JC",
+            question_text=question_text,
+            draft_id=draft_id,
+            approved_formula_images=[formula.name],
+        )
+    )
+
+    metadata, sections = storage.read_question(created["id"])
+    assert metadata["图片"] == ["LXJC0001_01.png"]
+    assert "LXJC0001_01.png" in sections["题目"]
+    assert (config.ASSETS_DIR / "LXJC0001_01.png").exists()
+    assert not any(path.name.endswith("_02.png") for path in config.ASSETS_DIR.iterdir())
+
+
+def test_uploaded_image_token_is_placed_and_normalized_to_png(isolated_data):
+    image_buffer = BytesIO()
+    Image.new("RGB", (320, 180), "#ddeeff").save(image_buffer, format="JPEG")
+    image_buffer.seek(0)
+    upload = UploadFile(filename="diagram.jpg", file=image_buffer)
+    token = "upload-image://diagram-1"
+
+    created = asyncio.run(
+        questions.create_question(
+            block_code="LX",
+            type_code="JC",
+            question_text=f"如图所示。\n\n![题图]({token}){{width=70%}}",
+            files=[upload],
+            upload_image_tokens=[token],
+        )
+    )
+
+    metadata, sections = storage.read_question(created["id"])
+    assert metadata["图片"] == ["LXJC0001_01.png"]
+    assert "../assets/LXJC0001_01.png" in sections["题目"]
+    assert (config.ASSETS_DIR / "LXJC0001_01.png").read_bytes().startswith(b"\x89PNG")
+
+
+def test_unbalanced_formula_is_rejected_before_saving(isolated_data):
+    with pytest.raises(AppError, match="公式格式需要检查"):
+        asyncio.run(
+            questions.create_question(
+                block_code="LX",
+                type_code="JC",
+                question_text="由 $F=ma 求加速度。",
+            )
+        )
+
+
 def test_formal_export_uses_template_and_officecli_review(isolated_data, monkeypatch):
     storage.write_question(
         "LXJD0001",
@@ -166,6 +241,7 @@ def test_formal_export_uses_template_and_officecli_review(isolated_data, monkeyp
     assert exported["validation"]["ok"] is True
     assert exported["preview_filename"].endswith("_预览.html")
     assert (config.EXPORT_DIR / exported["preview_filename"]).exists()
+    assert "--from=markdown+tex_math_dollars+raw_attribute+link_attributes" in captured_command
     assert any(argument.startswith("--reference-doc=") for argument in captured_command)
     assert "formal_exam.docx" in " ".join(captured_command)
     assert "# 参考答案" in markdown
@@ -206,6 +282,40 @@ def test_update_question_keeps_id_and_changes_content(isolated_data):
 
     with pytest.raises(AppError, match="题号格式"):
         storage.question_path("../../secrets")
+
+
+def test_update_question_removes_unreferenced_bound_image(isolated_data):
+    image = config.ASSETS_DIR / "LXJC0001_01.png"
+    Image.new("RGB", (120, 80), "white").save(image)
+    storage.write_question(
+        "LXJC0001",
+        {
+            "id": "LXJC0001",
+            "板块": "力学",
+            "主类型": "基础题",
+            "类型": ["基础题"],
+            "图片": [image.name],
+        },
+        {
+            "题目": f"如图所示。\n\n![](../assets/{image.name})",
+            "答案": "",
+            "解析": "",
+            "备注": "",
+        },
+    )
+
+    questions.update_question(
+        "LXJC0001",
+        {
+            "metadata": {"图片": []},
+            "sections": {"题目": "图片已移除。"},
+        },
+    )
+
+    metadata, sections = storage.read_question("LXJC0001")
+    assert metadata["图片"] == []
+    assert "LXJC0001_01.png" not in sections["题目"]
+    assert not image.exists()
 
 
 def test_rebuild_index_uses_existing_question_files(isolated_data):

@@ -167,3 +167,19 @@ def detect_formula_items(markdown: str, draft_dir: Path, draft_id: str) -> list[
 
 def has_editable_math(markdown: str) -> bool:
     return bool(MATH_RE.search(markdown))
+
+
+def math_delimiter_issue(markdown: str) -> str:
+    """Return a teacher-facing message when common math delimiters are unbalanced."""
+    text = str(markdown or "")
+    if text.count(r"\[") != text.count(r"\]"):
+        return "独立公式的开头和结尾没有配对（\\[ ... \\]）。"
+    if text.count(r"\(") != text.count(r"\)"):
+        return "行内公式的开头和结尾没有配对（\\( ... \\)）。"
+
+    without_blocks = re.sub(r"(?<!\\)\$\$.*?(?<!\\)\$\$", "", text, flags=re.S)
+    if len(re.findall(r"(?<!\\)\$\$", text)) % 2:
+        return "独立公式的 $$ 没有成对出现。"
+    if len(re.findall(r"(?<!\\)\$", without_blocks)) % 2:
+        return "行内公式的 $ 没有成对出现。"
+    return ""

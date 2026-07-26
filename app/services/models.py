@@ -36,19 +36,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "cloud": True,
     },
     "deepseek": {
-        "name": "DeepSeek 官方 API",
+        "name": "DeepSeek",
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-v4-flash",
         "cloud": True,
     },
     "custom": {
-        "name": "自定义 OpenAI 兼容接口（含 LM Studio）",
+        "name": "其他兼容服务（含 LM Studio）",
         "base_url": "",
         "model": "",
         "cloud": True,
     },
     "ollama": {
-        "name": "Ollama / 本地模型",
+        "name": "本机模型（Ollama）",
         "base_url": "http://127.0.0.1:11434",
         "model": "qwen3:8b",
         "cloud": False,
@@ -120,7 +120,7 @@ class SecretStore:
             keyring.set_password(KEYRING_SERVICE, self._username(provider), value)
         except KeyringError as exc:
             raise AppError(
-                "系统凭据存储不可用，API Key 未保存。请检查 Windows 凭据管理器后重试。"
+                "访问密钥未能安全保存，请检查系统设置后重试。"
             ) from exc
 
     def delete(self, provider: str) -> None:
@@ -264,10 +264,10 @@ def _client(settings: dict[str, Any]) -> httpx.Client:
 
 def _response_error(response: httpx.Response) -> AppError:
     messages = {
-        401: "API Key 无效，请重新检查。",
+        401: "访问密钥无效，请重新检查。",
         402: "模型账户余额不足。",
-        403: "当前 API Key 没有访问该模型的权限。",
-        404: "模型名称或接口地址不存在。",
+        403: "当前访问密钥没有使用该模型的权限。",
+        404: "模型名称或服务地址不存在。",
         429: "模型服务请求过于频繁，请稍后再试。",
     }
     message = messages.get(response.status_code, f"模型服务返回错误（HTTP {response.status_code}）。")
@@ -427,7 +427,7 @@ def _configured_provider(*, require_enabled: bool) -> tuple[ModelProvider, dict[
     api_key = SECRET_STORE.get(settings["provider"])
     local_base = urlparse(settings["base_url"]).hostname in {"127.0.0.1", "localhost", "::1"}
     if settings["provider"] != "ollama" and not api_key and not local_base:
-        raise AppError("尚未保存该模型服务的 API Key。")
+        raise AppError("尚未保存该模型服务的访问密钥。")
     if settings["provider"] == "ollama":
         return OllamaProvider(settings), settings
     return OpenAICompatibleProvider(settings, api_key), settings

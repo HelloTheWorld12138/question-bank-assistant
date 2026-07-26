@@ -4,8 +4,11 @@ const state = {
   draftReady: false,
   wordDraftId: "",
   wordDraftImages: [],
+  uploadItems: [],
   formulaItems: [],
+  approvedFormulaImages: new Set(),
   editingId: "",
+  editingImages: [],
   resultItems: new Map(),
   displayLabels: new Map(),
   modelSettings: null,
@@ -15,6 +18,10 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const MANUAL_SECTION_IDS = ["questionText", "answerText", "analysisText"];
+const EDIT_SECTION_IDS = ["editQuestionText", "editAnswerText", "editAnalysisText"];
+const RICH_CONTENT_RE =
+  /(!\[[^\]]*\]\([^)]+\)(?:\{[^}\n]*\})?|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]+\$|\\\([^)\n]*\\\))/g;
 
 const WORKSPACE_VIEWS = new Set([
   "home",
@@ -46,6 +53,159 @@ function bindWorkspaceNavigation() {
   }
   const initialView = window.location.hash.replace("#", "");
   switchWorkspaceView(initialView || "home", { updateHash: false });
+}
+
+function appendPlainText(container, text) {
+  const lines = String(text || "").split("\n");
+  lines.forEach((line, index) => {
+    if (index) container.appendChild(document.createElement("br"));
+    container.appendChild(document.createTextNode(line));
+  });
+}
+
+function uploadItemForToken(token) {
+  return state.uploadItems.find((item) => item.token === token);
+}
+
+function safePreviewImageUrl(url) {
+  const raw = String(url || "").trim();
+  if (raw.startsWith("upload-image://")) {
+    return uploadItemForToken(raw)?.previewUrl || "";
+  }
+  if (
+    raw.startsWith("/draft-assets/") ||
+    raw.startsWith("/assets/") ||
+    raw.startsWith("../assets/") ||
+    raw.startsWith("./assets/")
+  ) {
+    return raw;
+  }
+  return "";
+}
+
+function renderMath(container, latex, displayMode = false) {
+  const formula = String(latex || "").trim();
+  if (!formula) return false;
+  const holder = document.createElement(displayMode ? "div" : "span");
+  holder.className = displayMode ? "math-preview display-math" : "math-preview";
+  try {
+    if (!window.katex) throw new Error("公式预览组件尚未加载");
+    window.katex.render(formula, holder, {
+      displayMode,
+      throwOnError: true,
+      strict: "ignore",
+      trust: false,
+    });
+  } catch (error) {
+    holder.classList.add("math-error");
+    holder.textContent = `公式需检查：${formula}`;
+    holder.title = error.message || "公式格式不正确";
+  }
+  container.appendChild(holder);
+  return !holder.classList.contains("math-error");
+}
+
+function renderRichPreview(markdown, container, emptyText = "这里会显示排版效果") {
+  if (!container) return;
+  container.innerHTML = "";
+  const source = String(markdown || "");
+  if (!source.trim()) {
+    container.classList.add("is-empty");
+    container.textContent = emptyText;
+    return;
+  }
+  container.classList.remove("is-empty");
+  let lastIndex = 0;
+  for (const match of source.matchAll(RICH_CONTENT_RE)) {
+    appendPlainText(container, source.slice(lastIndex, match.index));
+    const token = match[0];
+    if (token.startsWith("![")) {
+      const imageMatch = token.match(/^!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}\n]*)\})?$/);
+      if (imageMatch) {
+        const imageUrl = safePreviewImageUrl(imageMatch[2]);
+        const figure = document.createElement("span");
+        figure.className = "preview-figure";
+        if (imageUrl) {
+          const image = document.createElement("img");
+          image.src = imageUrl;
+          image.alt = imageMatch[1] || "题目图片";
+          const widthMatch = String(imageMatch[3] || "").match(/width\s*=\s*["']?(\d+)%/);
+          if (widthMatch) image.style.maxWidth = `${Math.min(100, Number(widthMatch[1]))}%`;
+          figure.appendChild(image);
+        } else {
+          figure.textContent = "图片暂时无法预览";
+        }
+        container.appendChild(figure);
+      }
+    } else if (token.startsWith("$$")) {
+      renderMath(container, token.slice(2, -2), true);
+    } else if (token.startsWith("\\[")) {
+      renderMath(container, token.slice(2, -2), true);
+    } else if (token.startsWith("\\(")) {
+      renderMath(container, token.slice(2, -2), false);
+    } else {
+      renderMath(container, token.slice(1, -1), false);
+    }
+    lastIndex = Number(match.index) + token.length;
+  }
+  appendPlainText(container, source.slice(lastIndex));
+}
+
+function renderManualPreviews() {
+  renderRichPreview($("questionText").value, $("questionPreview"), "题目预览");
+  renderRichPreview($("answerText").value, $("answerPreview"), "答案预览");
+  renderRichPreview($("analysisText").value, $("analysisPreview"), "解析预览");
+}
+
+function renderEditPreviews() {
+  renderRichPreview($("editQuestionText").value, $("editQuestionPreview"), "题目预览");
+  if ($("editAnswerPreview")) {
+    renderRichPreview($("editAnswerText").value, $("editAnswerPreview"), "答案预览");
+  }
+  if ($("editAnalysisPreview")) {
+    renderRichPreview($("editAnalysisText").value, $("editAnalysisPreview"), "解析预览");
+  }
+}
+
+function insertAtCursor(field, text, selectStartOffset = 0, selectLength = 0) {
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? start;
+  field.setRangeText(text, start, end, "end");
+  field.focus();
+  if (selectLength) {
+    field.setSelectionRange(start + selectStartOffset, start + selectStartOffset + selectLength);
+  }
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function insertFormula(targetId, mode) {
+  const field = $(targetId);
+  if (!field) return;
+  const selected = field.value.slice(field.selectionStart, field.selectionEnd).trim();
+  const sample = selected || (mode === "block" ? "F = ma" : "v = v_0 + at");
+  const inserted = mode === "block" ? `\n\n$$\n${sample}\n$$\n\n` : `$${sample}$`;
+  const offset = mode === "block" ? 4 : 1;
+  insertAtCursor(field, inserted, offset, selected ? 0 : sample.length);
+}
+
+function insertImageReference(targetId, url, alt = "题图") {
+  const field = $(targetId);
+  if (!field) return;
+  insertAtCursor(field, `\n\n![${alt}](${url}){width=70%}\n\n`);
+}
+
+function removeImageReference(url, fieldIds = MANUAL_SECTION_IDS) {
+  const escaped = String(url).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `!\\[[^\\]]*\\]\\(${escaped}\\)(?:\\{[^}\\n]*\\})?`,
+    "g",
+  );
+  for (const fieldId of fieldIds) {
+    const field = $(fieldId);
+    if (!field) continue;
+    field.value = field.value.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trim();
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
 
 function optionElement(value, text) {
@@ -86,24 +246,17 @@ async function loadOptions() {
   }
 
   const status = $("pandocStatus");
-  const importReady = Boolean(state.options.pandoc);
-  if (state.options.pandoc) {
-    const parts = ["已检测到 Pandoc"];
-    const officeStatus = state.options.officecli || {};
-    parts.push(officeStatus.available ? `OfficeCLI ${officeStatus.version || ""}`.trim() : "未检测到 OfficeCLI");
-    parts.push(state.options.agent ? "本地 agent" : "未检测到本地 agent");
-    parts.push(state.options.formula_ocr ? "公式 OCR" : "未检测到公式 OCR");
-    status.textContent = parts.join(" / ");
-    status.classList.add(importReady ? "ok" : "warn");
-  } else {
-    status.textContent = "未检测到 Pandoc，仅能生成 exam.md";
-    status.classList.add("warn");
-  }
-  $("homePandocStatus").textContent = state.options.pandoc ? "Pandoc 已就绪" : "尚未安装 Pandoc";
-  $("homeOcrStatus").textContent = state.options.ocr?.available ? "本地 OCR 已就绪" : "基础模式（人工复核）";
+  const wordReady = Boolean(state.options.pandoc);
+  const ocrReady = Boolean(state.options.ocr?.available);
+  status.textContent =
+    `Word：${wordReady ? "可用" : "不可用"} · 图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
+    `AI：${state.options.agent ? "可用" : "未启用"}`;
+  status.classList.add(wordReady ? "ok" : "warn");
+  $("homePandocStatus").textContent = wordReady ? "可用" : "需要安装组件";
+  $("homeOcrStatus").textContent = ocrReady ? "可用" : "照片需人工核对";
   $("convertWordBtn").disabled = !state.options.pandoc;
   if (!state.options.pandoc) {
-    $("convertWordBtn").title = "需要 Pandoc 才能转换 Word；智能整理和公式 OCR 均为可选增强。";
+    $("convertWordBtn").title = "当前不能读取 Word，请先完成组件安装。";
   }
 }
 
@@ -112,47 +265,170 @@ function setSaveEnabled() {
   $("saveBtn").disabled = !state.draftReady || unresolved;
 }
 
+function setUploadItems(fileList) {
+  for (const item of state.uploadItems) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.uploadItems = Array.from(fileList || []).map((file, index) => {
+    const isImage = file.type.startsWith("image/");
+    const uniquePart = window.crypto?.randomUUID?.() || `${Date.now()}-${index}`;
+    return {
+      file,
+      token: isImage ? `upload-image://${uniquePart}` : "",
+      previewUrl: isImage ? URL.createObjectURL(file) : "",
+    };
+  });
+}
+
+function imageLocations(url, fieldIds = MANUAL_SECTION_IDS) {
+  const labels = {
+    questionText: "题目",
+    answerText: "答案",
+    analysisText: "解析",
+    editQuestionText: "题目",
+    editAnswerText: "答案",
+    editAnalysisText: "解析",
+  };
+  const filename = String(url || "").split("?", 1)[0].split("/").pop();
+  return fieldIds
+    .filter((id) => {
+      const value = $(id)?.value || "";
+      return value.includes(url) || (filename && value.includes(filename));
+    })
+    .map((id) => labels[id]);
+}
+
+function imageActionButton(label, targetId, url, afterInsert) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost compact";
+  button.textContent = label;
+  button.addEventListener("click", () => {
+    insertImageReference(targetId, url);
+    afterInsert?.();
+  });
+  return button;
+}
+
+function imagePreviewCard({
+  name,
+  url,
+  previewUrl,
+  onRemove,
+  fieldIds = MANUAL_SECTION_IDS,
+  onChanged = renderImagePreview,
+}) {
+  const card = document.createElement("div");
+  card.className = "image-preview-card";
+  const visual = document.createElement("div");
+  visual.className = "image-preview-visual";
+  const source = previewUrl || safePreviewImageUrl(url);
+  if (source && !source.toLowerCase().includes(".wmf") && !source.toLowerCase().includes(".emf")) {
+    const image = document.createElement("img");
+    image.src = source;
+    image.alt = name || "题目图片";
+    visual.appendChild(image);
+  } else {
+    visual.textContent = name || "图片";
+  }
+  const info = document.createElement("div");
+  info.className = "image-preview-info";
+  const title = document.createElement("strong");
+  title.textContent = name || "图片";
+  const location = document.createElement("span");
+  const locations = imageLocations(url, fieldIds);
+  location.textContent = locations.length ? `已放入：${locations.join("、")}` : "尚未放入内容";
+  const actions = document.createElement("div");
+  actions.className = "image-card-actions";
+  const targets = fieldIds[0].startsWith("edit")
+    ? [
+        ["放入题目", "editQuestionText"],
+        ["放入答案", "editAnswerText"],
+        ["放入解析", "editAnalysisText"],
+      ]
+    : [
+        ["放入题目", "questionText"],
+        ["放入答案", "answerText"],
+        ["放入解析", "analysisText"],
+      ];
+  for (const [label, targetId] of targets) {
+    actions.appendChild(imageActionButton(label, targetId, url, onChanged));
+  }
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ghost compact danger-text";
+  remove.textContent = "移除";
+  remove.addEventListener("click", onRemove);
+  actions.appendChild(remove);
+  info.append(title, location, actions);
+  card.append(visual, info);
+  return card;
+}
+
 function renderImagePreview() {
   const holder = $("imagePreview");
   holder.innerHTML = "";
-  const files = Array.from($("files").files || []);
-  const images = files.filter((file) => file.type.startsWith("image/"));
+  const uploads = state.uploadItems.filter((item) => item.previewUrl);
   const hasWordImages = state.wordDraftImages.length > 0;
-  if (!images.length && !hasWordImages) {
-    holder.textContent = "未选择图片。Word/PDF 附件会随题号保存，但不写入图片列表。";
+  if (!uploads.length && !hasWordImages) {
+    holder.textContent = "没有图片。";
     return;
   }
   for (const image of state.wordDraftImages) {
-    if (image.url && !image.url.toLowerCase().endsWith(".wmf") && !image.url.toLowerCase().endsWith(".emf")) {
-      const img = document.createElement("img");
-      img.src = image.url;
-      img.alt = image.name;
-      holder.appendChild(img);
-    } else {
-      const chip = document.createElement("span");
-      chip.className = "file-chip";
-      chip.textContent = image.name || "媒体文件";
-      holder.appendChild(chip);
-    }
+    holder.appendChild(
+      imagePreviewCard({
+        name: image.name,
+        url: image.url,
+        onRemove: () => {
+          removeImageReference(image.url);
+          state.wordDraftImages = state.wordDraftImages.filter((item) => item !== image);
+          state.formulaItems = state.formulaItems.filter((item) => item.url !== image.url);
+          state.approvedFormulaImages.delete(image.url);
+          renderFormulaPanel();
+          renderImagePreview();
+        },
+      }),
+    );
   }
-  for (const file of images) {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
-    img.alt = file.name;
-    holder.appendChild(img);
+  for (const item of uploads) {
+    holder.appendChild(
+      imagePreviewCard({
+        name: item.file.name,
+        url: item.token,
+        previewUrl: item.previewUrl,
+        onRemove: () => {
+          removeImageReference(item.token);
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+          state.uploadItems = state.uploadItems.filter((candidate) => candidate !== item);
+          renderImagePreview();
+        },
+      }),
+    );
   }
+}
+
+function placeUnassignedUploads() {
+  for (const item of state.uploadItems) {
+    if (!item.previewUrl || imageLocations(item.token).length) continue;
+    const current = $("questionText").value.trim();
+    $("questionText").value =
+      `${current}${current ? "\n\n" : ""}![题图](${item.token}){width=70%}`.trim();
+  }
+  renderManualPreviews();
 }
 
 function generateDraft() {
   if (!$("questionText").value.trim()) {
-    alert("请先填写题目正文。");
+    alert("请先填写题目。");
     return;
   }
+  placeUnassignedUploads();
   state.draftReady = true;
   $("draftHint").classList.add("hidden");
   $("reviewArea").classList.remove("hidden");
   setSaveEnabled();
   renderImagePreview();
+  renderManualPreviews();
 }
 
 function mergeText(current, incoming) {
@@ -181,16 +457,60 @@ function fillMetadata(metadata) {
   if (metadata["备注"]) $("remarks").value = metadata["备注"];
 }
 
-function replaceFormulaLink(url, latex) {
-  const trimmed = (latex || "").trim();
-  if (!trimmed) return;
-  const escaped = trimmed.startsWith("$") ? trimmed : `$${trimmed}$`;
-  for (const id of ["questionText", "answerText", "analysisText"]) {
-    const field = $(id);
-    field.value = field.value.split(`](${url})`).join(`](${url})`);
-    const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)`, "g");
-    field.value = field.value.replace(pattern, escaped);
+function formulaMarkup(latex) {
+  const trimmed = String(latex || "").trim().replace(/^\$+|\$+$/g, "");
+  return `$${trimmed}$`;
+}
+
+function applyFormulaDecision(item, decision, latex = "") {
+  if (item.decision === "convert" && item.appliedMarkup) {
+    for (const fieldId of item.convertedFields || []) {
+      const field = $(fieldId);
+      const original = item.originalMarkup?.[fieldId] || `![公式](${item.url}){width=70%}`;
+      field.value = field.value.replace(item.appliedMarkup, original);
+    }
   }
+
+  state.approvedFormulaImages.delete(item.url);
+  item.confirmed = false;
+  item.decision = "";
+  item.appliedMarkup = "";
+  item.convertedFields = [];
+
+  if (decision === "keep") {
+    item.decision = "keep";
+    item.confirmed = true;
+    state.approvedFormulaImages.add(item.url);
+  } else if (decision === "convert") {
+    const trimmed = String(latex || "").trim();
+    if (!trimmed) {
+      alert("请先填写公式。");
+      return false;
+    }
+    const escapedUrl = item.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `!\\[[^\\]]*\\]\\(${escapedUrl}\\)(?:\\{[^}\\n]*\\})?`,
+      "g",
+    );
+    const markup = formulaMarkup(trimmed);
+    item.originalMarkup = item.originalMarkup || {};
+    for (const fieldId of MANUAL_SECTION_IDS) {
+      const field = $(fieldId);
+      const original = field.value.match(pattern)?.[0];
+      if (!original) continue;
+      item.originalMarkup[fieldId] = original;
+      field.value = field.value.replace(pattern, markup);
+      item.convertedFields.push(fieldId);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    item.decision = "convert";
+    item.confirmed = true;
+    item.appliedMarkup = markup;
+  }
+  renderManualPreviews();
+  renderImagePreview();
+  setSaveEnabled();
+  return true;
 }
 
 function renderFormulaPanel() {
@@ -221,36 +541,63 @@ function renderFormulaPanel() {
     const editor = document.createElement("div");
     editor.className = "formula-editor";
     const label = document.createElement("label");
-    label.textContent = item.reason || "疑似公式图片";
+    label.textContent = "这张图片可能是公式";
     const textarea = document.createElement("textarea");
     textarea.rows = 3;
     textarea.value = item.latex || "";
-    textarea.placeholder = item.ocr_error || "填写或修正 LaTeX，例如 \\frac{a}{b}";
+    textarea.placeholder = "输入公式，例如：\\frac{v^2}{r}";
+    const rendered = document.createElement("div");
+    rendered.className = "formula-rendered";
+    const updateRendered = () => {
+      rendered.innerHTML = "";
+      if (textarea.value.trim()) {
+        renderMath(rendered, textarea.value.trim().replace(/^\$+|\$+$/g, ""), true);
+      } else {
+        rendered.textContent = "输入后在这里预览";
+        rendered.classList.add("is-empty");
+      }
+    };
     textarea.addEventListener("input", () => {
       item.latex = textarea.value;
-      item.confirmed = false;
-      checkbox.checked = false;
-      setSaveEnabled();
-    });
-
-    const checkboxLabel = document.createElement("label");
-    checkboxLabel.className = "formula-confirm";
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = item.confirmed;
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked && !textarea.value.trim()) {
-        checkbox.checked = false;
-        alert("请先填写 LaTeX，再确认这个公式。");
-        return;
+      updateRendered();
+      if (item.decision === "convert") {
+        if (!textarea.value.trim()) {
+          item.confirmed = false;
+          setSaveEnabled();
+          return;
+        }
+        const nextMarkup = formulaMarkup(textarea.value);
+        for (const fieldId of item.convertedFields || []) {
+          const field = $(fieldId);
+          field.value = field.value.replace(item.appliedMarkup, nextMarkup);
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        item.appliedMarkup = nextMarkup;
+        item.confirmed = true;
+        setSaveEnabled();
       }
-      item.confirmed = checkbox.checked;
-      item.latex = textarea.value;
-      if (item.confirmed) replaceFormulaLink(item.url, item.latex);
-      setSaveEnabled();
     });
-    checkboxLabel.appendChild(checkbox);
-    checkboxLabel.append("确认并替换为可编辑公式");
+    updateRendered();
+
+    const choices = document.createElement("div");
+    choices.className = "formula-choices";
+    const convert = document.createElement("button");
+    convert.type = "button";
+    convert.className = item.decision === "convert" ? "compact" : "secondary compact";
+    convert.textContent = item.decision === "convert" ? "已转为公式" : "转为可编辑公式";
+    convert.addEventListener("click", () => {
+      item.latex = textarea.value;
+      if (applyFormulaDecision(item, "convert", item.latex)) renderFormulaPanel();
+    });
+    const keep = document.createElement("button");
+    keep.type = "button";
+    keep.className = item.decision === "keep" ? "compact" : "secondary compact";
+    keep.textContent = item.decision === "keep" ? "已保留原图" : "保留原图";
+    keep.addEventListener("click", () => {
+      applyFormulaDecision(item, "keep");
+      renderFormulaPanel();
+    });
+    choices.append(convert, keep);
 
     const context = document.createElement("div");
     context.className = "formula-context";
@@ -258,13 +605,14 @@ function renderFormulaPanel() {
 
     editor.appendChild(label);
     editor.appendChild(textarea);
+    editor.appendChild(rendered);
     if (item.ocr_error) {
       const error = document.createElement("div");
       error.className = "formula-error";
-      error.textContent = item.ocr_error;
+      error.textContent = "未能自动识别。可手动输入公式，也可保留原图。";
       editor.appendChild(error);
     }
-    editor.appendChild(checkboxLabel);
+    editor.appendChild(choices);
     editor.appendChild(context);
     row.appendChild(preview);
     row.appendChild(editor);
@@ -275,7 +623,7 @@ function renderFormulaPanel() {
 
 async function convertWordToMarkdown() {
   if (!(state.options && state.options.pandoc)) {
-    alert("Word 单题导入需要 Pandoc。智能整理和公式 OCR 均为可选增强。");
+    alert("当前不能读取 Word，请先完成组件安装。");
     return;
   }
   const input = $("wordConvertFile");
@@ -288,7 +636,7 @@ async function convertWordToMarkdown() {
   const button = $("convertWordBtn");
   const originalText = button.textContent;
   button.disabled = true;
-  button.textContent = "转换中...";
+  button.textContent = "正在读取…";
 
   const form = new FormData();
   form.append("file", file);
@@ -299,7 +647,7 @@ async function convertWordToMarkdown() {
   button.textContent = originalText;
 
   if (!response.ok) {
-    alert(data.detail || "Word 转 Markdown 失败。");
+    alert(data.detail || "读取 Word 失败。");
     return;
   }
 
@@ -319,10 +667,18 @@ async function convertWordToMarkdown() {
 
   state.wordDraftId = data.draft_id || "";
   state.wordDraftImages = data.images || [];
-  state.formulaItems = data.formula_items || [];
+  state.formulaItems = (data.formula_items || []).map((item) => ({
+    ...item,
+    decision: "",
+    appliedMarkup: "",
+    convertedFields: [],
+    originalMarkup: {},
+  }));
+  state.approvedFormulaImages.clear();
   state.draftReady = Boolean($("questionText").value.trim());
   renderImagePreview();
   renderFormulaPanel();
+  renderManualPreviews();
   if (state.draftReady) {
     $("draftHint").classList.add("hidden");
     $("reviewArea").classList.remove("hidden");
@@ -331,7 +687,7 @@ async function convertWordToMarkdown() {
 
   const warnings = data.warnings || [];
   if (warnings.length) {
-    alert(`Word 已转换，但需要人工检查：\n\n${warnings.join("\n")}`);
+    alert(`内容已读取，请检查：\n\n${warnings.join("\n")}`);
   }
 }
 
@@ -343,7 +699,7 @@ async function saveQuestion() {
   if (!state.draftReady) return;
   const unresolved = state.formulaItems.filter((item) => !item.confirmed);
   if (unresolved.length) {
-    alert(`还有 ${unresolved.length} 个疑似公式图片没有确认，不能入库。`);
+    alert(`还有 ${unresolved.length} 张疑似公式图片未处理。`);
     setSaveEnabled();
     return;
   }
@@ -362,8 +718,14 @@ async function saveQuestion() {
   appendFormValue(form, "question_type", $("questionType").value);
   appendFormValue(form, "remarks", $("remarks").value);
   appendFormValue(form, "draft_id", state.wordDraftId);
-  for (const file of $("files").files) {
-    form.append("files", file);
+  appendFormValue(form, "approved_formula_images", JSON.stringify(Array.from(state.approvedFormulaImages)));
+  appendFormValue(
+    form,
+    "upload_image_tokens",
+    JSON.stringify(state.uploadItems.map((item) => item.token)),
+  );
+  for (const item of state.uploadItems) {
+    form.append("files", item.file);
   }
 
   $("saveBtn").disabled = true;
@@ -379,7 +741,14 @@ async function saveQuestion() {
   state.wordDraftId = "";
   state.wordDraftImages = [];
   state.formulaItems = [];
+  state.approvedFormulaImages.clear();
+  for (const item of state.uploadItems) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.uploadItems = [];
+  $("files").value = "";
   renderFormulaPanel();
+  renderImagePreview();
   $("draftHint").classList.remove("hidden");
   $("reviewArea").classList.add("hidden");
   $("saveBtn").disabled = true;
@@ -398,7 +767,7 @@ function renderExamSelection() {
   if (!ids.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "请先在上方搜索并勾选题目。";
+    empty.textContent = "请先到“找题”页面勾选题目。";
     holder.appendChild(empty);
     return;
   }
@@ -582,7 +951,7 @@ function renderAssistantRecommendations(data) {
     const add = document.createElement("button");
     add.type = "button";
     add.className = "ghost compact";
-    add.textContent = state.selected.has(item.id) ? "已在试卷中" : "加入组卷";
+    add.textContent = state.selected.has(item.id) ? "已在试卷中" : "加入试卷";
     add.disabled = state.selected.has(item.id);
     add.addEventListener("click", () => {
       state.selected.add(item.id);
@@ -613,13 +982,13 @@ async function recommendQuestions() {
   let consent = true;
   if (useAi && state.modelSettings?.cloud) {
     consent = confirm(
-      "将把找题要求和本地筛选后的候选题元数据、题目短预览发送到所选云模型。" +
+      "将把找题要求、候选题的分类信息和题目短预览发送到所选云模型。" +
         "不会发送答案、完整解析或整个题库。是否继续？",
     );
     if (!consent) return;
   }
   $("assistantRecommendBtn").disabled = true;
-  $("assistantResult").textContent = "正在本机解析要求并筛选候选题……";
+  $("assistantResult").textContent = "正在找题…";
   const response = await fetch("/api/assistant/recommend", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -628,7 +997,7 @@ async function recommendQuestions() {
   const data = await response.json();
   $("assistantRecommendBtn").disabled = false;
   if (!response.ok) {
-    $("assistantResult").textContent = data.detail || "智能找题失败";
+    $("assistantResult").textContent = data.detail || "找题失败";
     return;
   }
   renderAssistantRecommendations(data);
@@ -650,7 +1019,7 @@ function addAllRecommendations() {
 async function exportExam() {
   const mode = document.querySelector("input[name='exportMode']:checked").value;
   const result = $("exportResult");
-  result.textContent = "正在生成...";
+  result.textContent = "正在生成 Word…";
   const ids = Array.from(state.selected);
   const displayLabels = {};
   ids.forEach((id, index) => {
@@ -683,22 +1052,23 @@ async function exportExam() {
   result.innerHTML = "";
   const exportedFiles = data.files || [data];
   for (const exported of exportedFiles) {
-    const markdownLink = document.createElement("a");
-    markdownLink.href = `/download/${encodeURIComponent(exported.exam_md_filename)}`;
-    markdownLink.textContent = `下载 ${exported.exam_md_filename}`;
-    result.appendChild(markdownLink);
     if (exported.docx_created) {
       const wordLink = document.createElement("a");
       wordLink.href = `/download/${encodeURIComponent(exported.exam_docx_filename)}`;
-      wordLink.textContent = `下载 ${exported.exam_docx_filename}`;
+      wordLink.textContent = "下载 Word";
       result.appendChild(wordLink);
+    } else if (exported.exam_md_filename) {
+      const fallbackLink = document.createElement("a");
+      fallbackLink.href = `/download/${encodeURIComponent(exported.exam_md_filename)}`;
+      fallbackLink.textContent = "下载备用文件";
+      result.appendChild(fallbackLink);
     }
     if (exported.preview_filename) {
       const previewLink = document.createElement("a");
       previewLink.href = `/preview/${encodeURIComponent(exported.preview_filename)}`;
       previewLink.target = "_blank";
       previewLink.rel = "noopener";
-      previewLink.textContent = `预览 ${exported.kind || "Word"}`;
+      previewLink.textContent = "查看排版";
       result.appendChild(previewLink);
     }
   }
@@ -708,12 +1078,14 @@ async function exportExam() {
   const issueCount = exportedFiles.reduce((total, item) => total + Number((item.issues || {}).count || 0), 0);
   const validationText = validation.performed
     ? validation.ok
-      ? `结构校验通过，发现 ${issueCount} 个版式问题`
-      : "结构校验未通过"
-    : "未执行 OfficeCLI 结构校验";
+      ? issueCount
+        ? `已生成，建议检查 ${issueCount} 处排版`
+        : "已生成，排版检查通过"
+      : "Word 已生成，请打开检查排版"
+    : "Word 已生成";
   summary.textContent = separate
-    ? `已分别生成 ${exportedFiles.length} 份文件 · ${summaryData.template_name || "默认模板"} · 共发现 ${issueCount} 个版式问题`
-    : `${summaryData.template_name || "默认模板"} · ${summaryData.engine || "markdown"} · ${validationText}`;
+    ? `已生成 ${exportedFiles.length} 份 Word · ${summaryData.template_name || "默认样式"}`
+    : `${summaryData.template_name || "默认样式"} · ${validationText}`;
   result.appendChild(summary);
   if (summaryData.pandoc_message) {
     const message = document.createElement("div");
@@ -739,6 +1111,44 @@ function metadataLines(value) {
   return String(value || "");
 }
 
+function renderEditingImages() {
+  const holder = $("editImageManager");
+  holder.innerHTML = "";
+  if (!state.editingImages.length) {
+    holder.textContent = "这道题没有图片。";
+    return;
+  }
+  for (const filename of state.editingImages) {
+    const url = `/assets/${filename}`;
+    holder.appendChild(
+      imagePreviewCard({
+        name: filename,
+        url,
+        fieldIds: EDIT_SECTION_IDS,
+        onChanged: () => {
+          renderEditingImages();
+          renderEditPreviews();
+        },
+        onRemove: () => {
+          if (!confirm(`移除图片“${filename}”吗？保存后会从题库中删除。`)) return;
+          for (const fieldId of EDIT_SECTION_IDS) {
+            const field = $(fieldId);
+            const pattern = new RegExp(
+              `!\\[[^\\]]*\\]\\([^)]*${filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^)]*\\)` +
+                `(?:\\{[^}\\n]*\\})?`,
+              "g",
+            );
+            field.value = field.value.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trim();
+          }
+          state.editingImages = state.editingImages.filter((item) => item !== filename);
+          renderEditingImages();
+          renderEditPreviews();
+        },
+      }),
+    );
+  }
+}
+
 async function openQuestionEditor(questionId) {
   const response = await fetch(`/api/questions/${encodeURIComponent(questionId)}`);
   const data = await response.json();
@@ -762,6 +1172,9 @@ async function openQuestionEditor(questionId) {
   $("editAnswerText").value = sections["答案"] || "";
   $("editAnalysisText").value = sections["解析"] || "";
   $("editRemarks").value = sections["备注"] || "";
+  state.editingImages = Array.from(metadata["图片"] || []);
+  renderEditingImages();
+  renderEditPreviews();
   $("editDialog").showModal();
 }
 
@@ -783,6 +1196,7 @@ async function saveQuestionEdit() {
         年份: $("editYear").value.trim(),
         来源: $("editSource").value.trim(),
         题型: $("editQuestionType").value,
+        图片: state.editingImages,
       },
       sections: {
         题目: $("editQuestionText").value,
@@ -962,14 +1376,14 @@ async function checkIntegrity() {
 }
 
 async function rebuildIndex() {
-  if (!confirm("确定扫描现有题目并重建编号索引吗？")) return;
+  if (!confirm("确定扫描现有题目并重新整理题号记录吗？")) return;
   const response = await fetch("/api/index/rebuild", { method: "POST" });
   const data = await response.json();
   if (!response.ok) {
-    alert(data.detail || "索引修复失败");
+    alert(data.detail || "题号记录整理失败");
     return;
   }
-  $("maintenanceResult").textContent = `编号索引已修复，共识别 ${Object.keys(data.index || {}).length} 个编号前缀。`;
+  $("maintenanceResult").textContent = `题号记录已整理，共识别 ${Object.keys(data.index || {}).length} 类题号。`;
 }
 
 async function restoreDefaultTemplates() {
@@ -987,13 +1401,21 @@ function importDraftById(draftId) {
   return (state.importTask?.drafts || []).find((item) => item.id === draftId);
 }
 
-function bindDraftField(element, draft, field, transform = (value) => value) {
+function bindDraftField(
+  element,
+  draft,
+  field,
+  transform = (value) => value,
+  onUpdate = () => {},
+) {
   element.value = Array.isArray(draft[field]) ? draft[field].join("\n") : String(draft[field] ?? "");
   element.addEventListener("input", () => {
     draft[field] = transform(element.value);
+    onUpdate();
   });
   element.addEventListener("change", () => {
     draft[field] = transform(element.value);
+    onUpdate();
   });
 }
 
@@ -1033,8 +1455,8 @@ function renderImportDrafts() {
     header.className = "import-draft-header";
     const title = document.createElement("div");
     const confidence = Math.round(Number(draft.confidence || 0) * 100);
-    const numberText = draft.original_number ? `原题号 ${draft.original_number}` : "未识别原题号";
-    title.textContent = `草稿 ${index + 1} · ${numberText} · 第 ${draft.page || 1} 页 · 置信度 ${confidence}%`;
+    const numberText = draft.original_number ? `原题 ${draft.original_number}` : "题号待确认";
+    title.textContent = `第 ${index + 1} 道 · ${numberText} · 识别可信度 ${confidence}%`;
     const confirmedLabel = document.createElement("label");
     confirmedLabel.className = "confirm-draft";
     const confirmed = document.createElement("input");
@@ -1044,7 +1466,7 @@ function renderImportDrafts() {
     confirmed.addEventListener("change", () => {
       draft.confirmed = confirmed.checked;
     });
-    confirmedLabel.append(confirmed, draft.committed_id ? ` 已入库：${draft.committed_id}` : " 已对照原文核对");
+    confirmedLabel.append(confirmed, draft.committed_id ? ` 已入库：${draft.committed_id}` : " 内容已核对");
     header.append(title, confirmedLabel);
     card.appendChild(header);
 
@@ -1067,7 +1489,7 @@ function renderImportDrafts() {
         ),
       ),
       draftLabel(
-        "主类型",
+        "题目特点",
         draftSelect(
           draft,
           "type_code",
@@ -1087,7 +1509,7 @@ function renderImportDrafts() {
     );
     const difficulty = document.createElement("input");
     bindDraftField(difficulty, draft, "difficulty");
-    metadataGrid.appendChild(draftLabel("难度系数", difficulty));
+    metadataGrid.appendChild(draftLabel("难度", difficulty));
     const year = document.createElement("input");
     bindDraftField(year, draft, "year");
     metadataGrid.appendChild(draftLabel("年份", year));
@@ -1107,8 +1529,19 @@ function renderImportDrafts() {
     const question = document.createElement("textarea");
     question.rows = 8;
     question.className = "import-question-text";
-    bindDraftField(question, draft, "question");
+    const questionPreview = document.createElement("div");
+    questionPreview.className = "content-preview import-content-preview";
+    const updateQuestionPreview = () =>
+      renderRichPreview(draft.question, questionPreview, "题目排版预览");
+    bindDraftField(question, draft, "question", (value) => value, updateQuestionPreview);
     card.appendChild(draftLabel("题目正文", question));
+    const previewDetails = document.createElement("details");
+    previewDetails.className = "draft-preview-details";
+    const previewSummary = document.createElement("summary");
+    previewSummary.textContent = "查看公式和图片效果";
+    previewDetails.append(previewSummary, questionPreview);
+    card.appendChild(previewDetails);
+    updateQuestionPreview();
 
     const answerGrid = document.createElement("div");
     answerGrid.className = "two-col";
@@ -1138,12 +1571,16 @@ function renderImportDrafts() {
           ["enhance", "去阴影增强"],
           ["crop", "裁剪"],
           ["perspective", "透视校正"],
+          ["delete", "移除"],
         ]) {
           const button = document.createElement("button");
           button.type = "button";
           button.className = "ghost compact";
           button.textContent = label;
-          button.addEventListener("click", () => processImportImage(draft.id, image.name, action));
+          button.addEventListener("click", () => {
+            if (action === "delete" && !confirm("移除这张图片吗？")) return;
+            processImportImage(draft.id, image.name, action);
+          });
           buttons.appendChild(button);
         }
         imageCard.append(preview, buttons);
@@ -1189,7 +1626,9 @@ async function loadImportStatus() {
     $("ocrStatus").textContent = data.detail || "读取导入状态失败";
     return;
   }
-  $("ocrStatus").textContent = data.ocr?.message || "未检测到 OCR";
+  $("ocrStatus").textContent = data.ocr?.available
+    ? "可识别扫描件和照片"
+    : "照片会保留原图，请人工填写文字";
   const list = $("importTaskList");
   list.innerHTML = "";
   for (const item of data.tasks || []) {
@@ -1219,7 +1658,7 @@ async function analyzeImportFile() {
   const answerFile = $("batchAnswerFile").files?.[0];
   if (answerFile) form.append("answer_file", answerFile);
   $("analyzeImportBtn").disabled = true;
-  $("importResult").textContent = "正在提取文字、图片并切分题目，请稍候……";
+  $("importResult").textContent = "正在读取文件并切分题目…";
   const response = await fetch("/api/import/analyze", { method: "POST", body: form });
   const data = await response.json();
   $("analyzeImportBtn").disabled = false;
@@ -1260,7 +1699,7 @@ async function saveImportDrafts({ quiet = false } = {}) {
     return false;
   }
   state.importTask = data;
-  if (!quiet) $("importResult").textContent = "审核草稿已保存，尚未写入正式题库。";
+  if (!quiet) $("importResult").textContent = "进度已保存。";
   renderImportDrafts();
   return true;
 }
@@ -1269,7 +1708,7 @@ async function commitImportDrafts() {
   if (!state.importTask) return;
   const selectedIds = state.importTask.drafts.filter((item) => item.confirmed && !item.committed_id).map((item) => item.id);
   if (!selectedIds.length) {
-    alert("请先逐题核对并勾选“已对照原文核对”。");
+    alert("请先核对题目，并勾选“内容已核对”。");
     return;
   }
   if (!confirm(`确定将已核对的 ${selectedIds.length} 道题写入正式题库吗？`)) return;
@@ -1388,17 +1827,24 @@ function renderModelSettings(data) {
   $("modelApiKey").value = "";
   const keyText = settings.cloud
     ? settings.api_key_configured
-      ? "API Key 已安全保存"
-      : "尚未保存 API Key"
-    : "本地模型不需要 API Key";
+      ? "访问密钥已安全保存"
+      : "尚未填写访问密钥"
+    : "本机模型不需要访问密钥";
   $("modelStatus").textContent =
     `${settings.provider_name || "模型服务"} · ${settings.model || "未设置模型"} · ${keyText}` +
-    (settings.local_only ? " · 当前禁止连接云模型" : "");
+    (settings.local_only ? " · 当前不会连接网络" : "");
   $("aiClassifyBtn").disabled = !settings.enabled;
   $("aiClassifyBtn").title = settings.enabled ? "" : "请先在下方启用并保存 AI 辅助设置。";
   $("homeModelStatus").textContent = settings.enabled
-    ? `${settings.provider_name || "模型服务"}已启用`
-    : "未启用（核心功能可用）";
+    ? "已启用"
+    : "未启用";
+  if (state.options) {
+    const wordReady = Boolean(state.options.pandoc);
+    const ocrReady = Boolean(state.options.ocr?.available);
+    $("pandocStatus").textContent =
+      `Word：${wordReady ? "可用" : "不可用"} · 图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
+      `AI：${settings.enabled ? "已启用" : "未启用"}`;
+  }
 }
 
 async function loadModelSettings() {
@@ -1421,8 +1867,8 @@ function applyProviderDefaults() {
   $("modelBaseUrl").value = provider.default_base_url || "";
   $("modelName").value = provider.default_model || "";
   $("modelApiKey").placeholder = provider.cloud
-    ? "留空表示保持原有 Key"
-    : "本地模型不需要填写";
+    ? "留空表示保持原有密钥"
+    : "本机模型不需要填写";
 }
 
 function modelSettingsPayload() {
@@ -1484,7 +1930,7 @@ function applyClassificationDraft(draft) {
 async function classifyCurrentQuestion() {
   const questionText = $("questionText").value.trim();
   if (!questionText) {
-    alert("请先填写题目正文。");
+    alert("请先填写题目。");
     return;
   }
   const settings = state.modelSettings || {};
@@ -1497,7 +1943,7 @@ async function classifyCurrentQuestion() {
   }
   const resultBox = $("aiClassifyResult");
   resultBox.classList.remove("hidden");
-  resultBox.textContent = "正在生成分类建议……";
+  resultBox.textContent = "正在填写分类…";
   $("aiClassifyBtn").disabled = true;
   const response = await fetch("/api/ai/classify", {
     method: "POST",
@@ -1507,7 +1953,7 @@ async function classifyCurrentQuestion() {
   const data = await response.json();
   $("aiClassifyBtn").disabled = false;
   if (!response.ok) {
-    resultBox.textContent = data.detail || "AI 分类失败；你仍可手动填写并入库。";
+    resultBox.textContent = data.detail || "自动填写失败，请手动选择分类。";
     return;
   }
   applyClassificationDraft(data.draft || {});
@@ -1517,14 +1963,34 @@ async function classifyCurrentQuestion() {
     ? `；需注意：${draft["警告"].join("、")}`
     : "";
   resultBox.textContent =
-    `建议已填入审核区（置信度 ${confidence}%）：${draft["理由"] || "请人工检查"}${warnings}。` +
+    `建议已填入检查区（可信度 ${confidence}%）：${draft["理由"] || "请人工检查"}${warnings}。` +
     "点击“确认入库”前仍可修改，AI 不会直接写入正式题库。";
 }
 
 function bindEvents() {
   $("draftBtn").addEventListener("click", generateDraft);
   $("convertWordBtn").addEventListener("click", convertWordToMarkdown);
-  $("files").addEventListener("change", renderImagePreview);
+  $("files").addEventListener("change", (event) => {
+    setUploadItems(event.target.files);
+    renderImagePreview();
+  });
+  for (const fieldId of MANUAL_SECTION_IDS) {
+    $(fieldId).addEventListener("input", () => {
+      renderManualPreviews();
+      if (!$("reviewArea").classList.contains("hidden")) renderImagePreview();
+    });
+  }
+  for (const fieldId of EDIT_SECTION_IDS) {
+    $(fieldId).addEventListener("input", () => {
+      renderEditPreviews();
+      if ($("editDialog").open) renderEditingImages();
+    });
+  }
+  for (const button of document.querySelectorAll("[data-formula-target]")) {
+    button.addEventListener("click", () =>
+      insertFormula(button.dataset.formulaTarget, button.dataset.formulaMode || "inline"),
+    );
+  }
   $("saveBtn").addEventListener("click", saveQuestion);
   $("searchBtn").addEventListener("click", searchQuestions);
   $("assistantRecommendBtn").addEventListener("click", recommendQuestions);
@@ -1553,6 +2019,7 @@ function bindEvents() {
   $("analyzeImportBtn").addEventListener("click", analyzeImportFile);
   $("saveImportDraftsBtn").addEventListener("click", () => saveImportDrafts());
   $("commitImportBtn").addEventListener("click", commitImportDrafts);
+  renderManualPreviews();
 }
 
 bindWorkspaceNavigation();

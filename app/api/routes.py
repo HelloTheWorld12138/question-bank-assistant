@@ -79,6 +79,8 @@ async def create_question(
     question_type: str = Form(""),
     remarks: str = Form(""),
     draft_id: str = Form(""),
+    approved_formula_images: str = Form(""),
+    upload_image_tokens: str = Form(""),
     files: list[UploadFile] = File(default=[]),
 ) -> dict[str, Any]:
     return await questions.create_question(
@@ -96,6 +98,8 @@ async def create_question(
         question_type=question_type,
         remarks=remarks,
         draft_id=draft_id,
+        approved_formula_images=approved_formula_images,
+        upload_image_tokens=upload_image_tokens,
         files=files,
     )
 

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
+    <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -22,35 +23,35 @@
         <div class="brand-mark">物</div>
         <div>
           <h1>高中物理题库助手</h1>
-          <p>教师本地题库工作台</p>
+          <p>导入、找题、组卷</p>
         </div>
       </div>
       <div class="header-actions">
-        <div id="pandocStatus" class="status">检测 Pandoc...</div>
+        <div id="pandocStatus" class="status">正在检查功能…</div>
       </div>
     </header>
 
     <nav class="task-nav" aria-label="主要功能">
       <button type="button" class="task-nav-item is-active" data-workspace-target="home">首页</button>
-      <button type="button" class="task-nav-item" data-workspace-target="import">批量导入</button>
-      <button type="button" class="task-nav-item" data-workspace-target="manual">单题录入</button>
-      <button type="button" class="task-nav-item" data-workspace-target="search">智能找题</button>
-      <button type="button" class="task-nav-item" data-workspace-target="export">组卷导出</button>
-      <button type="button" class="task-nav-item" data-workspace-target="maintenance">题库维护</button>
-      <button type="button" class="task-nav-item" data-workspace-target="settings">AI 设置</button>
+      <button type="button" class="task-nav-item" data-workspace-target="import">导入资料</button>
+      <button type="button" class="task-nav-item" data-workspace-target="manual">录入单题</button>
+      <button type="button" class="task-nav-item" data-workspace-target="search">找题</button>
+      <button type="button" class="task-nav-item" data-workspace-target="export">生成试卷</button>
+      <button type="button" class="task-nav-item" data-workspace-target="maintenance">管理题库</button>
+      <button type="button" class="task-nav-item" data-workspace-target="settings">AI 辅助</button>
     </nav>
 
     <main class="layout">
       <section class="workspace-home workspace-view is-active" data-workspace-view="home">
         <div class="home-hero">
           <div>
-            <span class="eyebrow">PHYSICS QUESTION BANK</span>
-            <h2>今天要完成什么？</h2>
-            <p>按教学任务进入对应工作区，不需要理解 Markdown、OCR 或命令行。</p>
+            <span class="eyebrow">高中物理题库</span>
+            <h2>请选择要做的事</h2>
+            <p>每项任务独立完成，按页面提示操作即可。</p>
           </div>
           <div class="home-hero-badge">
-            <strong>本地优先</strong>
-            <span>题库数据保存在当前电脑</span>
+            <strong>数据在本机</strong>
+            <span>断网也能录题、找题和组卷</span>
           </div>
         </div>
 
@@ -59,7 +60,7 @@
             <span class="task-entry-icon">导</span>
             <span class="task-entry-copy">
               <strong>导入一份资料</strong>
-              <small>Word、PDF、扫描件或照片批量切题</small>
+              <small>从 Word、PDF 或照片批量录题</small>
             </span>
             <span class="task-entry-arrow">→</span>
           </button>
@@ -67,7 +68,7 @@
             <span class="task-entry-icon">录</span>
             <span class="task-entry-copy">
               <strong>录入一道题</strong>
-              <small>粘贴题目、答案和解析，审核后入库</small>
+              <small>粘贴内容或读取一个 Word 文件</small>
             </span>
             <span class="task-entry-arrow">→</span>
           </button>
@@ -75,15 +76,15 @@
             <span class="task-entry-icon">找</span>
             <span class="task-entry-copy">
               <strong>按要求找题</strong>
-              <small>用一句话筛选知识点、难度和题型</small>
+              <small>输入要求，系统从本机题库筛选</small>
             </span>
             <span class="task-entry-arrow">→</span>
           </button>
           <button type="button" class="task-entry-card entry-export" data-workspace-target="export">
             <span class="task-entry-icon">卷</span>
             <span class="task-entry-copy">
-              <strong>整理并导出试卷</strong>
-              <small>调整顺序和题号，生成可编辑 Word</small>
+              <strong>生成一份试卷</strong>
+              <small>排好题目顺序并导出 Word</small>
             </span>
             <span class="task-entry-arrow">→</span>
           </button>
@@ -91,16 +92,16 @@
 
         <div class="home-status-grid">
           <div class="home-status-card">
-            <span>Word 导出</span>
-            <strong id="homePandocStatus">正在检测</strong>
+            <span>Word 导入与导出</span>
+            <strong id="homePandocStatus">正在检查</strong>
           </div>
           <div class="home-status-card">
-            <span>离线 OCR</span>
-            <strong id="homeOcrStatus">正在检测</strong>
+            <span>图片文字识别</span>
+            <strong id="homeOcrStatus">正在检查</strong>
           </div>
           <div class="home-status-card">
-            <span>AI 辅助</span>
-            <strong id="homeModelStatus">可选功能</strong>
+            <span>AI 自动分类</span>
+            <strong id="homeModelStatus">可选</strong>
           </div>
         </div>
       </section>
@@ -109,16 +110,16 @@
         <div class="section-title">
           <div>
             <span class="step-badge">导</span>
-            <span>批量导入中心</span>
+            <span>导入整份资料</span>
           </div>
           <div class="action-group">
-            <button type="button" id="saveImportDraftsBtn" class="secondary" disabled>保存审核草稿</button>
-            <button type="button" id="commitImportBtn" disabled>确认所选入库</button>
+            <button type="button" id="saveImportDraftsBtn" class="secondary" disabled>保存进度</button>
+            <button type="button" id="commitImportBtn" disabled>将已核对题目入库</button>
           </div>
         </div>
         <div class="notice">
-          支持 DOCX、数字 PDF、扫描 PDF 和手机照片。系统只生成待审核草稿；
-          题目、答案、公式或匹配不确定时会醒目标记，不会自动进入正式题库。
+          上传题目文件，也可同时上传答案文件。系统会先切成草稿；
+          请逐题核对，只有勾选的题目才会入库。
         </div>
         <div class="grid">
           <label class="wide">
@@ -126,18 +127,18 @@
             <input id="batchImportFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
           </label>
           <label class="wide">
-            答案或解析文件（可选）
+            答案文件（可不选）
             <input id="batchAnswerFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
           </label>
         </div>
         <div class="action-group import-actions">
-          <button type="button" id="analyzeImportBtn">分析并生成草稿</button>
-          <span id="ocrStatus" class="hint">正在检测本地 OCR……</span>
+          <button type="button" id="analyzeImportBtn">开始整理</button>
+          <span id="ocrStatus" class="hint">正在检查图片识别功能…</span>
         </div>
-        <div id="importResult" class="result-box">选择文件后开始分析。大文件可能需要一些时间。</div>
+        <div id="importResult" class="result-box">先选择题目文件，再点击“开始整理”。</div>
         <div id="importDrafts" class="import-drafts"></div>
         <details class="recent-imports">
-          <summary>最近导入任务</summary>
+          <summary>继续上次导入</summary>
           <div id="importTaskList" class="maintenance-list"></div>
         </details>
       </section>
@@ -146,9 +147,9 @@
         <div class="section-title">
           <div>
             <span class="step-badge">1</span>
-            <span>导入题目</span>
+            <span>录入一道题</span>
           </div>
-          <button type="button" id="draftBtn">生成题目草稿</button>
+          <button type="button" id="draftBtn">下一步：检查</button>
         </div>
 
         <div class="grid">
@@ -157,7 +158,7 @@
             <select id="blockCode"></select>
           </label>
           <label>
-            主类型
+            题目特点
             <select id="typeCode"></select>
           </label>
           <label>
@@ -165,50 +166,65 @@
             <select id="questionType"></select>
           </label>
           <label>
-            难度系数
-            <input id="difficulty" placeholder="例如 0.63 或 3" />
+            难度
+            <input id="difficulty" placeholder="可填 0.63 或 3" />
           </label>
           <label>
             年份
             <input id="year" placeholder="例如 2025" />
           </label>
           <label class="wide">
-            来源
-            <input id="source" placeholder="例如 高三月考 / 教师自编" />
+            题目来源
+            <input id="source" placeholder="如：高三月考、教师自编" />
           </label>
           <label class="wide">
-            上传题目、答案、解析附件或图片
+            添加图片或原文件
             <input id="files" type="file" multiple accept=".doc,.docx,.pdf,image/*" />
           </label>
         </div>
 
         <div class="convert-box">
-          <div class="minor-title">Word 转 Markdown 草稿</div>
+          <div class="minor-title">从 Word 读取内容</div>
           <div class="convert-row">
             <input id="wordConvertFile" type="file" accept=".docx" />
             <select id="convertTarget">
-              <option value="questionText">填入题目正文</option>
+              <option value="questionText">作为题目</option>
               <option value="answerText">填入答案</option>
               <option value="analysisText">填入解析</option>
             </select>
-            <button type="button" id="convertWordBtn" class="secondary">转换并填入</button>
+            <button type="button" id="convertWordBtn" class="secondary">读取内容</button>
           </div>
-          <div class="hint">基础转换只需要 Pandoc；智能整理和公式 OCR 不可用时，会回退到离线规则与人工审核。</div>
+          <div class="hint">文字、可编辑公式和图片会一起读取；读取后请检查排版效果。</div>
         </div>
 
-        <label>
-          题目正文
-          <textarea id="questionText" rows="8" placeholder="粘贴题目正文，或先用 Word 转换填入"></textarea>
-        </label>
+        <div class="content-field">
+          <div class="content-field-header">
+            <strong>题目</strong>
+            <div class="formula-tools">
+              <button type="button" class="ghost compact" data-formula-target="questionText" data-formula-mode="inline">插入行内公式</button>
+              <button type="button" class="ghost compact" data-formula-target="questionText" data-formula-mode="block">插入独立公式</button>
+            </div>
+          </div>
+          <textarea id="questionText" rows="8" aria-label="题目" placeholder="粘贴题目，或从 Word 读取"></textarea>
+          <div id="questionPreview" class="content-preview" aria-label="题目预览"></div>
+        </div>
         <div class="two-col">
-          <label>
-            答案
-            <textarea id="answerText" rows="7" placeholder="粘贴答案"></textarea>
-          </label>
-          <label>
-            解析
-            <textarea id="analysisText" rows="7" placeholder="粘贴解析"></textarea>
-          </label>
+          <div class="content-field">
+            <div class="content-field-header">
+              <strong>答案</strong>
+              <button type="button" class="ghost compact" data-formula-target="answerText" data-formula-mode="inline">插入公式</button>
+            </div>
+            <textarea id="answerText" rows="7" aria-label="答案" placeholder="粘贴答案"></textarea>
+            <div id="answerPreview" class="content-preview compact-preview" aria-label="答案预览"></div>
+          </div>
+          <div class="content-field">
+            <div class="content-field-header">
+              <strong>解析</strong>
+              <button type="button" class="ghost compact" data-formula-target="analysisText" data-formula-mode="inline">插入公式</button>
+            </div>
+            <textarea id="analysisText" rows="7" aria-label="解析" placeholder="粘贴解析"></textarea>
+            <div id="analysisPreview" class="content-preview compact-preview" aria-label="解析预览"></div>
+          </div>
         </div>
       </section>
 
@@ -216,11 +232,11 @@
         <div class="section-title">
           <div>
             <span class="step-badge">2</span>
-            <span>审核入库</span>
+            <span>检查后入库</span>
           </div>
-          <button type="button" id="saveBtn" disabled>确认入库</button>
+          <button type="button" id="saveBtn" disabled>确认并入库</button>
         </div>
-        <div id="draftHint" class="empty">先在上方填写内容并生成草稿。</div>
+        <div id="draftHint" class="empty">请先填写题目，再点击“下一步：检查”。</div>
         <div id="reviewArea" class="hidden">
           <div class="grid">
             <label class="wide">
@@ -228,7 +244,7 @@
               <textarea id="knowledgePoints" rows="3" placeholder="每行一个知识点"></textarea>
             </label>
             <label class="wide">
-              附加类型
+              其他特点
               <textarea id="extraTypes" rows="3" placeholder="每行一个类型，可留空"></textarea>
             </label>
           </div>
@@ -237,20 +253,21 @@
             <textarea id="remarks" rows="3" placeholder="可填写组卷说明、易错点或讲评提示"></textarea>
           </label>
           <div>
-            <div class="minor-title">图片预览</div>
+            <div class="minor-title">图片</div>
+            <div class="hint">图片可放入题目、答案或解析；未使用的图片不会入库。</div>
             <div id="imagePreview" class="preview-list"></div>
           </div>
           <div id="formulaPanel" class="formula-panel hidden">
-            <div class="minor-title">公式 OCR 确认</div>
-            <div class="hint">确认后会用 LaTeX 替换对应公式图片。未确认的疑似公式会阻止入库。</div>
+            <div class="minor-title">检查公式图片</div>
+            <div class="hint">每张图片选择“转为公式”或“保留原图”。转换结果可直接预览。</div>
             <div id="formulaList"></div>
           </div>
           <div class="ai-assist-box">
             <div>
-              <div class="minor-title">AI 辅助分类（可选）</div>
-              <div class="hint">只发送当前题目正文，不发送答案、解析或整个题库；生成结果仍需老师确认。</div>
+              <div class="minor-title">自动填写分类（可选）</div>
+              <div class="hint">只处理当前题目，结果仍由老师确认。</div>
             </div>
-            <button type="button" id="aiClassifyBtn" class="secondary">生成分类建议</button>
+            <button type="button" id="aiClassifyBtn" class="secondary">自动填写</button>
           </div>
           <div id="aiClassifyResult" class="result-box hidden"></div>
         </div>
@@ -260,49 +277,49 @@
         <div class="section-title">
           <div>
             <span class="step-badge">3</span>
-            <span>搜索组卷</span>
+            <span>找题</span>
           </div>
           <div class="action-group">
-            <button type="button" id="batchEditBtn" class="secondary">批量修改</button>
-            <button type="button" id="searchBtn">搜索题库</button>
+            <button type="button" id="batchEditBtn" class="secondary">修改所选题目</button>
+            <button type="button" id="searchBtn">按条件查找</button>
           </div>
         </div>
         <div class="assistant-search">
-          <div class="minor-title">用一句话智能找题（本地规则可用）</div>
+          <div class="minor-title">描述你想找的题</div>
           <div class="assistant-query-row">
             <textarea
               id="assistantQuery"
               rows="2"
               placeholder="例如：找 5 道近三年力学创新题，中等难度，覆盖牛顿第二定律，约 45 分钟，带解析"
             ></textarea>
-            <button type="button" id="assistantRecommendBtn">生成推荐</button>
+            <button type="button" id="assistantRecommendBtn">开始找题</button>
           </div>
           <div class="assistant-options">
             <label class="checkbox-line">
               <input id="assistantUseAi" type="checkbox" />
-              使用已配置模型优化候选排序（可选）
+              使用 AI 调整排序（可选）
             </label>
-            <button type="button" id="assistantAddAllBtn" class="secondary" disabled>将推荐题加入组卷</button>
+            <button type="button" id="assistantAddAllBtn" class="secondary" disabled>全部加入试卷</button>
           </div>
-          <div id="assistantResult" class="result-box">自然语言先在本机解析并筛选；不用 AI 也能工作。</div>
+          <div id="assistantResult" class="result-box">不启用 AI 也能按要求找题。</div>
           <div id="assistantRecommendations" class="assistant-recommendations"></div>
         </div>
         <div class="grid">
           <label class="wide">
-            全文关键词
-            <input id="searchQuery" placeholder="可搜索题目、答案、解析、备注或题号" />
+            关键词
+            <input id="searchQuery" placeholder="题目、答案、解析或题号" />
           </label>
           <label>
             板块
             <select id="searchBlock"><option value="">全部</option></select>
           </label>
           <label>
-            主类型
+            题目特点
             <select id="searchType"><option value="">全部</option></select>
           </label>
           <label>
-            难度/系数
-            <input id="searchDifficulty" placeholder="例如 0.63 或 3" />
+            难度
+            <input id="searchDifficulty" placeholder="可填 0.63 或 3" />
           </label>
           <label>
             年份
@@ -327,8 +344,8 @@
               <option value="id:desc">题号降序</option>
               <option value="updated:desc">最近修改</option>
               <option value="year:desc">年份从新到旧</option>
-              <option value="difficulty:asc">难度系数从低到高</option>
-              <option value="difficulty:desc">难度系数从高到低</option>
+              <option value="difficulty:asc">难度从低到高</option>
+              <option value="difficulty:desc">难度从高到低</option>
             </select>
           </label>
         </div>
@@ -344,7 +361,7 @@
                 <th>题号</th>
                 <th>板块</th>
                 <th>类型</th>
-                <th>难度/系数</th>
+                <th>难度</th>
                 <th>来源</th>
                 <th>题目预览</th>
                 <th>操作</th>
@@ -359,9 +376,9 @@
         <div class="section-title">
           <div>
             <span class="step-badge">4</span>
-            <span>导出 Word</span>
+            <span>生成试卷</span>
           </div>
-          <button type="button" id="exportBtn">生成试卷</button>
+          <button type="button" id="exportBtn">生成 Word</button>
         </div>
         <div class="grid export-settings">
           <label class="wide">
@@ -369,7 +386,7 @@
             <input id="examTitle" value="试卷" placeholder="例如 高二力学周测" />
           </label>
           <label>
-            排版模板
+            试卷样式
             <select id="examTemplate"></select>
           </label>
           <label>
@@ -405,33 +422,33 @@
             分开生成题目卷、答案卷、解析卷
           </label>
         </div>
-        <div class="minor-title">试卷题目顺序与展示题号</div>
+        <div class="minor-title">题目顺序</div>
         <div id="examSelectionList" class="exam-selection-list">
-          <div class="empty">请先在上方搜索并勾选题目。</div>
+          <div class="empty">请先到“找题”页面勾选题目。</div>
         </div>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="answers" /> 题目 + 答案</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="analysis" /> 题目 + 答案 + 解析</label>
         </div>
-        <div id="exportResult" class="result-box">每次生成都会创建独立文件，不会覆盖之前的试卷。</div>
+        <div id="exportResult" class="result-box">生成的新试卷不会覆盖以前的文件。</div>
       </section>
 
       <section class="panel workspace-view" data-workspace-view="maintenance">
         <div class="section-title">
           <div>
             <span class="step-badge">5</span>
-            <span>题库维护</span>
+            <span>管理题库</span>
           </div>
-          <button type="button" id="refreshMaintenanceBtn" class="ghost">刷新状态</button>
+          <button type="button" id="refreshMaintenanceBtn" class="ghost">刷新</button>
         </div>
         <div class="maintenance-actions">
-          <button type="button" id="integrityBtn" class="secondary">检查图片</button>
-          <button type="button" id="rebuildIndexBtn" class="secondary">修复编号索引</button>
+          <button type="button" id="integrityBtn" class="secondary">检查题目和图片</button>
+          <button type="button" id="rebuildIndexBtn" class="secondary">修复题号</button>
           <button type="button" id="restoreTemplatesBtn" class="secondary">恢复默认模板</button>
           <button type="button" id="backupBtn">立即备份</button>
         </div>
-        <div id="maintenanceResult" class="result-box">可检查题库完整性、创建备份并恢复误删题目。</div>
+        <div id="maintenanceResult" class="result-box">可检查题库、备份数据和恢复误删题目。</div>
         <div class="maintenance-grid">
           <div>
             <div class="minor-title">回收站</div>
@@ -448,7 +465,7 @@
         <div class="section-title">
           <div>
             <span class="step-badge">6</span>
-            <span>AI 辅助设置（可选）</span>
+            <span>AI 辅助（可选）</span>
           </div>
           <div class="action-group">
             <button type="button" id="testModelBtn" class="secondary">测试连接</button>
@@ -456,8 +473,7 @@
           </div>
         </div>
         <div class="notice">
-          题库的录入、搜索、组卷和导出不依赖 AI。国内网络建议使用阿里云百炼或 DeepSeek；
-          完全离线可选择本机 Ollama。
+          不设置 AI 也能使用全部基础功能。需要自动分类时，可选择国内模型服务或本机模型。
         </div>
         <div class="grid">
           <label>
@@ -469,19 +485,19 @@
             <input id="modelName" />
           </label>
           <label class="wide">
-            接口地址
+            服务地址（高级设置）
             <input id="modelBaseUrl" />
           </label>
           <label class="wide">
-            API Key（留空表示保持不变）
-            <input id="modelApiKey" type="password" autocomplete="new-password" placeholder="只保存在系统凭据管理器中" />
+            访问密钥（留空表示保持不变）
+            <input id="modelApiKey" type="password" autocomplete="new-password" placeholder="只保存在这台电脑的安全区域" />
           </label>
           <label>
             连接超时（秒）
             <input id="modelTimeout" type="number" min="5" max="300" value="45" />
           </label>
           <label>
-            自动重试次数
+            连接失败后重试
             <select id="modelRetries">
               <option value="0">0</option>
               <option value="1">1</option>
@@ -495,7 +511,7 @@
           </label>
           <label class="checkbox-line">
             <input id="modelLocalOnly" type="checkbox" />
-            只使用本地功能，禁止连接云模型
+            只使用本机功能，不连接网络
           </label>
         </div>
         <div id="modelStatus" class="result-box">正在读取模型设置……</div>
@@ -513,11 +529,11 @@
         </div>
         <div class="grid">
           <label>
-            板块（由题号确定）
+            板块（不能修改）
             <select id="editBlock" disabled></select>
           </label>
           <label>
-            主类型（由题号确定）
+            题目特点（不能修改）
             <select id="editMainType" disabled></select>
           </label>
           <label>
@@ -525,7 +541,7 @@
             <select id="editQuestionType"></select>
           </label>
           <label>
-            难度系数
+            难度
             <input id="editDifficulty" />
           </label>
           <label>
@@ -545,24 +561,44 @@
             <textarea id="editTypes" rows="3"></textarea>
           </label>
         </div>
-        <label>
-          题目
-          <textarea id="editQuestionText" rows="8"></textarea>
-        </label>
+        <div class="content-field">
+          <div class="content-field-header">
+            <strong>题目</strong>
+            <div class="formula-tools">
+              <button type="button" class="ghost compact" data-formula-target="editQuestionText" data-formula-mode="inline">插入行内公式</button>
+              <button type="button" class="ghost compact" data-formula-target="editQuestionText" data-formula-mode="block">插入独立公式</button>
+            </div>
+          </div>
+          <textarea id="editQuestionText" rows="8" aria-label="编辑题目"></textarea>
+          <div id="editQuestionPreview" class="content-preview"></div>
+        </div>
         <div class="two-col">
-          <label>
-            答案
-            <textarea id="editAnswerText" rows="6"></textarea>
-          </label>
-          <label>
-            解析
-            <textarea id="editAnalysisText" rows="6"></textarea>
-          </label>
+          <div class="content-field">
+            <div class="content-field-header">
+              <strong>答案</strong>
+              <button type="button" class="ghost compact" data-formula-target="editAnswerText" data-formula-mode="inline">插入公式</button>
+            </div>
+            <textarea id="editAnswerText" rows="6" aria-label="编辑答案"></textarea>
+            <div id="editAnswerPreview" class="content-preview compact-preview"></div>
+          </div>
+          <div class="content-field">
+            <div class="content-field-header">
+              <strong>解析</strong>
+              <button type="button" class="ghost compact" data-formula-target="editAnalysisText" data-formula-mode="inline">插入公式</button>
+            </div>
+            <textarea id="editAnalysisText" rows="6" aria-label="编辑解析"></textarea>
+            <div id="editAnalysisPreview" class="content-preview compact-preview"></div>
+          </div>
         </div>
         <label>
           备注
           <textarea id="editRemarks" rows="3"></textarea>
         </label>
+        <div>
+          <div class="minor-title">题目图片</div>
+          <div class="hint">可重新插入位置，或移除不需要的图片。</div>
+          <div id="editImageManager" class="preview-list"></div>
+        </div>
         <div class="dialog-actions">
           <button type="button" id="saveEditBtn">保存修改</button>
         </div>
@@ -574,7 +610,7 @@
         <div class="dialog-header">
           <div>
             <div class="minor-title">批量修改所选题目</div>
-            <div class="hint">只修改下面填写的项目；永久题号、板块和主类型不会改变。</div>
+            <div class="hint">只修改下面填写的项目；题号、板块和题目特点不会改变。</div>
           </div>
           <button type="button" id="closeBatchBtn" class="ghost compact">关闭</button>
         </div>
@@ -606,6 +642,7 @@
       </form>
     </dialog>
 
+    <script src="./vendor/katex/katex.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

@@ -37,6 +37,16 @@ def strip_markdown_images(markdown: str) -> str:
 
 def normalize_converted_markdown(markdown: str, draft_id: str) -> str:
     markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    # Pandoc's GFM writer wraps Word/OMML inline equations as $`...`$ and
+    # display equations as fenced `math` blocks. Normalize both forms so the
+    # browser preview, Markdown source and DOCX export share one syntax.
+    markdown = re.sub(r"\$`([^`\n]+)`\$", r"$\1$", markdown)
+    markdown = re.sub(
+        r"```[ \t]*math[ \t]*\n(.*?)\n```",
+        lambda match: f"$$\n{match.group(1).strip()}\n$$",
+        markdown,
+        flags=re.S,
+    )
     if draft_id:
         markdown = markdown.replace(
             f"{config.DRAFT_ASSETS_DIR.as_posix()}/{draft_id}/",
@@ -170,7 +180,7 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     ensure_dirs()
     pandoc_path = find_pandoc()
     if not pandoc_path:
-        raise AppError("未检测到 Pandoc，无法转换 Word。")
+        raise AppError("Word 读取组件不可用，请重新启动应用后再试。")
     if input_path.suffix.lower() != ".docx" or not input_path.is_file():
         raise AppError("请上传 .docx 格式的 Word 文件。")
 
@@ -201,7 +211,7 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
             check=False,
         )
         if completed.returncode != 0:
-            raise AppError(completed.stderr.strip() or "Word 转 Markdown 失败。", status_code=500, code="pandoc_failed")
+            raise AppError("读取 Word 失败，请确认文件可以正常打开。", status_code=500, code="pandoc_failed")
         markdown = normalize_converted_markdown(output_path.read_text(encoding="utf-8"), draft_id)
 
     images = []
@@ -239,17 +249,17 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
             metadata = normalize_agent_metadata(agent_sections.get("metadata"))
             agent_used = True
         elif agent_error:
-            warnings.append(f"本地智能整理暂时不可用，已使用规则解析：{agent_error}")
+            warnings.append("自动整理暂时不可用，已按原文读取；请检查题目、答案和解析的分段。")
     else:
-        warnings.append("未配置本地智能整理，已使用离线规则解析。")
+        warnings.append("内容已按原文读取，请检查题目、答案和解析的分段。")
     if formula_items and not formula_ocr_available():
-        warnings.append("检测到疑似公式图片，但未配置公式 OCR；请在审核区手动填写 LaTeX。")
+        warnings.append("发现疑似公式图片，请选择“转为公式”或“保留原图”。")
     if has_editable_math(markdown):
-        warnings.append("检测到可编辑 Markdown/LaTeX 公式，已保留。")
+        warnings.append("可编辑公式已保留，请核对显示效果。")
     if docx_payload["embedded_objects"]:
-        warnings.append("检测到 Word 内嵌对象。若它是旧版 MathType/OLE 公式，请确认 OCR 面板或手动改成 LaTeX 后再入库。")
+        warnings.append("发现旧版公式或内嵌内容，请在公式图片区逐项检查。")
     if docx_payload["wmf_or_emf"]:
-        warnings.append("检测到 WMF/EMF 图片；浏览器可能无法预览，入库前建议检查是否需要手动另存为 PNG。")
+        warnings.append("发现旧格式图片，网页可能无法预览；可保留原图，或在 Word 中另存为 PNG 后重新添加。")
 
     return {
         "markdown": markdown,

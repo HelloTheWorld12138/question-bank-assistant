@@ -80,5 +80,17 @@ TYPES = {
 
 QUESTION_TYPES = ("选择题", "填空题", "实验题", "计算题", "其他")
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".wmf", ".emf"}
+IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".svg",
+    ".wmf",
+    ".emf",
+}
 IMPORT_EXTENSIONS = {".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}

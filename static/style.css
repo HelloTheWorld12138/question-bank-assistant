@@ -559,6 +559,103 @@ button.compact {
   font-size: 13px;
 }
 
+.content-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 14px;
+}
+
+.content-field-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: #30445b;
+  font-size: 14px;
+}
+
+.formula-tools,
+.formula-choices,
+.image-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.content-preview {
+  min-height: 92px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid #cfd9df;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(35, 93, 114, 0.03) 1px, transparent 1px) 0 0 / 24px 24px,
+    #fff;
+  color: #1b2833;
+  font-family: "Times New Roman", "Songti SC", "SimSun", serif;
+  font-size: 16px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+
+.content-preview::before {
+  content: "排版预览";
+  display: block;
+  margin-bottom: 8px;
+  color: #718190;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.content-preview.is-empty {
+  color: #8b98a4;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 13px;
+}
+
+.compact-preview {
+  min-height: 72px;
+  max-height: 240px;
+}
+
+.preview-figure {
+  display: block;
+  margin: 14px 0;
+  text-align: center;
+}
+
+.preview-figure img {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.math-preview {
+  margin: 0 2px;
+}
+
+.display-math {
+  margin: 10px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.math-error {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #fff0f0;
+  color: #a43232;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 13px;
+}
+
 .preview-list {
   display: flex;
   flex-wrap: wrap;
@@ -568,14 +665,59 @@ button.compact {
   color: var(--muted);
 }
 
-.preview-list img {
-  width: 168px;
-  height: 116px;
-  object-fit: contain;
+.image-preview-card {
+  display: grid;
+  grid-template-columns: 150px minmax(190px, 1fr);
+  gap: 12px;
+  width: min(440px, 100%);
+  padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 9px;
   background: #fff;
-  box-shadow: 0 8px 20px rgba(23, 33, 43, 0.06);
+}
+
+.image-preview-visual {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #f4f6f8;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.image-preview-visual img,
+.preview-list .image-preview-visual img {
+  width: 100%;
+  height: 112px;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.image-preview-info {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.image-preview-info strong,
+.image-preview-info span {
+  overflow-wrap: anywhere;
+}
+
+.image-preview-info span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.danger-text {
+  color: #9b3030 !important;
 }
 
 .file-chip {
@@ -631,17 +773,36 @@ button.compact {
   min-width: 0;
 }
 
-.formula-confirm {
-  display: flex;
-  grid-template-columns: none;
-  align-items: center;
-  gap: 8px;
-  color: #30445b;
+.formula-rendered {
+  min-height: 64px;
+  padding: 10px;
+  overflow-x: auto;
+  border: 1px dashed #b8c8d0;
+  border-radius: 7px;
+  background: #fbfcfd;
+  text-align: center;
+}
+
+.formula-rendered.is-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.draft-preview-details {
+  margin: 2px 0 14px;
+}
+
+.draft-preview-details summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 13px;
   font-weight: 700;
 }
 
-.formula-confirm input {
-  width: auto;
+.import-content-preview {
+  margin-top: 9px;
 }
 
 .formula-error {
@@ -1125,6 +1286,15 @@ td:nth-child(2) {
   .assistant-options,
   .assistant-recommendation-heading {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .image-preview-card {
+    grid-template-columns: 1fr;
+  }
+
+  .content-field-header {
+    align-items: flex-start;
     flex-direction: column;
   }
 }
