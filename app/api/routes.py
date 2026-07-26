@@ -33,6 +33,7 @@ def options() -> dict[str, Any]:
     return {
         "blocks": [{"code": code, "name": name} for code, name in config.BLOCKS.items()],
         "types": [{"code": code, "name": name} for code, name in config.TYPES.items()],
+        "question_types": list(config.QUESTION_TYPES),
         "pandoc": documents.find_pandoc() is not None,
         "agent": opencode_available(),
         "formula_ocr": formula_ocr_available(),
@@ -65,6 +66,7 @@ async def create_question(
     analysis_text: str = Form(""),
     knowledge_points: str = Form(""),
     extra_types: str = Form(""),
+    question_type: str = Form(""),
     remarks: str = Form(""),
     draft_id: str = Form(""),
     files: list[UploadFile] = File(default=[]),
@@ -81,6 +83,7 @@ async def create_question(
         analysis_text=analysis_text,
         knowledge_points=knowledge_points,
         extra_types=extra_types,
+        question_type=question_type,
         remarks=remarks,
         draft_id=draft_id,
         files=files,
@@ -100,6 +103,10 @@ def search_questions(
     year: str = "",
     source: str = "",
     knowledge: str = "",
+    question_type: str = "",
+    query: str = "",
+    sort_by: str = "id",
+    sort_order: str = "asc",
 ) -> dict[str, Any]:
     return {
         "items": questions.search_questions(
@@ -109,6 +116,10 @@ def search_questions(
             year=year,
             source=source,
             knowledge=knowledge,
+            question_type=question_type,
+            query=query,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
     }
 
@@ -124,6 +135,16 @@ def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]
     return questions.update_question(question_id, payload)
 
 
+@api_router.post("/questions/{question_id}/copy")
+def copy_question(question_id: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    return questions.copy_question(question_id, payload)
+
+
+@api_router.post("/questions/batch-update")
+def batch_update_questions(payload: dict[str, Any]) -> dict[str, Any]:
+    return questions.batch_update_questions(payload)
+
+
 @api_router.delete("/questions/{question_id}")
 def delete_question(question_id: str) -> dict[str, Any]:
     return maintenance.delete_question(question_id)
@@ -132,6 +153,11 @@ def delete_question(question_id: str) -> dict[str, Any]:
 @api_router.post("/export")
 def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     return questions.export_exam(payload)
+
+
+@api_router.post("/export-set")
+def export_exam_set(payload: dict[str, Any]) -> dict[str, Any]:
+    return questions.export_exam_set(payload)
 
 
 @api_router.post("/index/rebuild")

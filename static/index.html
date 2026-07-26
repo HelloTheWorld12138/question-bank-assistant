@@ -40,6 +40,10 @@
             <select id="typeCode"></select>
           </label>
           <label>
+            题型
+            <select id="questionType"></select>
+          </label>
+          <label>
             难度系数
             <input id="difficulty" placeholder="例如 0.63 或 3" />
           </label>
@@ -129,9 +133,16 @@
             <span class="step-badge">3</span>
             <span>搜索组卷</span>
           </div>
-          <button type="button" id="searchBtn">搜索题库</button>
+          <div class="action-group">
+            <button type="button" id="batchEditBtn" class="secondary">批量修改</button>
+            <button type="button" id="searchBtn">搜索题库</button>
+          </div>
         </div>
         <div class="grid">
+          <label class="wide">
+            全文关键词
+            <input id="searchQuery" placeholder="可搜索题目、答案、解析、备注或题号" />
+          </label>
           <label>
             板块
             <select id="searchBlock"><option value="">全部</option></select>
@@ -155,6 +166,21 @@
           <label>
             知识点
             <input id="searchKnowledge" placeholder="输入知识点关键词" />
+          </label>
+          <label>
+            题型
+            <select id="searchQuestionType"><option value="">全部</option></select>
+          </label>
+          <label>
+            排序
+            <select id="searchSort">
+              <option value="id:asc">题号升序</option>
+              <option value="id:desc">题号降序</option>
+              <option value="updated:desc">最近修改</option>
+              <option value="year:desc">年份从新到旧</option>
+              <option value="difficulty:asc">难度系数从低到高</option>
+              <option value="difficulty:desc">难度系数从高到低</option>
+            </select>
           </label>
         </div>
         <div class="selection-bar">
@@ -205,6 +231,10 @@
             满分
             <input id="examTotalScore" value="100 分" placeholder="例如 100 分" />
           </label>
+          <label>
+            班级
+            <input id="examClassName" placeholder="例如 高二（1）班" />
+          </label>
           <label class="checkbox-line">
             <input id="showQuestionIds" type="checkbox" checked />
             在试卷上显示题库题号
@@ -213,6 +243,22 @@
             <input id="answersNewPage" type="checkbox" checked />
             答案与解析另起一页
           </label>
+          <label class="checkbox-line">
+            <input id="studentFields" type="checkbox" checked />
+            显示姓名、学号和得分栏
+          </label>
+          <label class="checkbox-line">
+            <input id="groupByQuestionType" type="checkbox" />
+            按选择题、实验题、计算题分组
+          </label>
+          <label class="checkbox-line">
+            <input id="separateDocuments" type="checkbox" />
+            分开生成题目卷、答案卷、解析卷
+          </label>
+        </div>
+        <div class="minor-title">试卷题目顺序与展示题号</div>
+        <div id="examSelectionList" class="exam-selection-list">
+          <div class="empty">请先在上方搜索并勾选题目。</div>
         </div>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
@@ -269,6 +315,10 @@
             <select id="editMainType" disabled></select>
           </label>
           <label>
+            题型
+            <select id="editQuestionType"></select>
+          </label>
+          <label>
             难度系数
             <input id="editDifficulty" />
           </label>
@@ -309,6 +359,43 @@
         </label>
         <div class="dialog-actions">
           <button type="button" id="saveEditBtn">保存修改</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="batchDialog" class="edit-dialog compact-dialog">
+      <form id="batchForm">
+        <div class="dialog-header">
+          <div>
+            <div class="minor-title">批量修改所选题目</div>
+            <div class="hint">只修改下面填写的项目；永久题号、板块和主类型不会改变。</div>
+          </div>
+          <button type="button" id="closeBatchBtn" class="ghost compact">关闭</button>
+        </div>
+        <div class="two-col">
+          <label>
+            增加类型（每行一个）
+            <textarea id="batchAddTypes" rows="4"></textarea>
+          </label>
+          <label>
+            移除类型（每行一个）
+            <textarea id="batchRemoveTypes" rows="4"></textarea>
+          </label>
+          <label>
+            增加知识点（每行一个）
+            <textarea id="batchAddKnowledge" rows="4"></textarea>
+          </label>
+          <label>
+            移除知识点（每行一个）
+            <textarea id="batchRemoveKnowledge" rows="4"></textarea>
+          </label>
+        </div>
+        <label>
+          统一设置题型（留空则不修改）
+          <select id="batchQuestionType"></select>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="saveBatchBtn">应用到所选题目</button>
         </div>
       </form>
     </dialog>

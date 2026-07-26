@@ -21,6 +21,7 @@ def test_health_and_question_api(isolated_data):
                 "answer_text": "A",
                 "analysis_text": "测试解析",
                 "knowledge_points": "速度",
+                "question_type": "选择题",
             },
         )
         assert response.status_code == 200
@@ -33,6 +34,30 @@ def test_health_and_question_api(isolated_data):
         detail = client.get("/api/questions/LXJC0001")
         assert detail.status_code == 200
         assert detail.json()["metadata"]["难度系数"] == "2"
+        assert detail.json()["metadata"]["题型"] == "选择题"
+
+        copied = client.post("/api/questions/LXJC0001/copy", json={})
+        assert copied.status_code == 200
+        assert copied.json()["id"] == "LXJC0002"
+
+        batch = client.post(
+            "/api/questions/batch-update",
+            json={
+                "ids": ["LXJC0001", "LXJC0002"],
+                "add_types": ["易错题"],
+                "add_knowledge": ["匀变速直线运动"],
+                "question_type": "计算题",
+            },
+        )
+        assert batch.status_code == 200
+        assert batch.json()["count"] == 2
+
+        sorted_search = client.get(
+            "/api/questions",
+            params={"question_type": "计算题", "query": "测试题目", "sort_by": "id", "sort_order": "desc"},
+        )
+        assert sorted_search.status_code == 200
+        assert [item["id"] for item in sorted_search.json()["items"]] == ["LXJC0002", "LXJC0001"]
 
         updated = client.put(
             "/api/questions/LXJC0001",

@@ -6,6 +6,8 @@ const state = {
   wordDraftImages: [],
   formulaItems: [],
   editingId: "",
+  resultItems: new Map(),
+  displayLabels: new Map(),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +32,15 @@ async function loadOptions() {
     $("typeCode").appendChild(optionElement(type.code, type.name));
     $("searchType").appendChild(optionElement(type.name, type.name));
     $("editMainType").appendChild(optionElement(type.name, type.name));
+  }
+  $("questionType").appendChild(optionElement("", "未指定"));
+  $("editQuestionType").appendChild(optionElement("", "未指定"));
+  $("batchQuestionType").appendChild(optionElement("", "不修改"));
+  for (const questionType of state.options.question_types || []) {
+    $("questionType").appendChild(optionElement(questionType, questionType));
+    $("searchQuestionType").appendChild(optionElement(questionType, questionType));
+    $("editQuestionType").appendChild(optionElement(questionType, questionType));
+    $("batchQuestionType").appendChild(optionElement(questionType, questionType));
   }
   for (const template of state.options.templates || []) {
     const label = template.available ? template.name : `${template.name}（缺失）`;
@@ -310,6 +321,7 @@ async function saveQuestion() {
   appendFormValue(form, "analysis_text", $("analysisText").value);
   appendFormValue(form, "knowledge_points", $("knowledgePoints").value);
   appendFormValue(form, "extra_types", $("extraTypes").value);
+  appendFormValue(form, "question_type", $("questionType").value);
   appendFormValue(form, "remarks", $("remarks").value);
   appendFormValue(form, "draft_id", state.wordDraftId);
   for (const file of $("files").files) {
@@ -338,9 +350,71 @@ async function saveQuestion() {
 
 function updateSelectedCount() {
   $("selectedCount").textContent = state.selected.size;
+  renderExamSelection();
+}
+
+function renderExamSelection() {
+  const holder = $("examSelectionList");
+  holder.innerHTML = "";
+  const ids = Array.from(state.selected);
+  if (!ids.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "请先在上方搜索并勾选题目。";
+    holder.appendChild(empty);
+    return;
+  }
+  ids.forEach((questionId, index) => {
+    const item = state.resultItems.get(questionId) || {};
+    const row = document.createElement("div");
+    row.className = "exam-selection-item";
+    const order = document.createElement("strong");
+    order.textContent = String(index + 1);
+    const title = document.createElement("span");
+    title.textContent = `${questionId} · ${item["题型"] || "未指定题型"} · ${item.preview || ""}`;
+    const label = document.createElement("input");
+    label.value = state.displayLabels.get(questionId) || String(index + 1);
+    label.title = "试卷上的展示题号";
+    label.setAttribute("aria-label", `${questionId} 的展示题号`);
+    label.addEventListener("input", () => state.displayLabels.set(questionId, label.value.trim()));
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "ghost compact";
+    up.textContent = "上移";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => moveSelectedQuestion(index, -1));
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "ghost compact";
+    down.textContent = "下移";
+    down.disabled = index === ids.length - 1;
+    down.addEventListener("click", () => moveSelectedQuestion(index, 1));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ghost compact";
+    remove.textContent = "移除";
+    remove.addEventListener("click", () => {
+      state.selected.delete(questionId);
+      state.displayLabels.delete(questionId);
+      updateSelectedCount();
+      searchQuestions();
+    });
+    row.append(order, title, label, up, down, remove);
+    holder.appendChild(row);
+  });
+}
+
+function moveSelectedQuestion(index, delta) {
+  const ids = Array.from(state.selected);
+  const target = index + delta;
+  if (target < 0 || target >= ids.length) return;
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  state.selected = new Set(ids);
+  renderExamSelection();
 }
 
 function renderResults(items) {
+  state.resultItems = new Map(items.map((item) => [item.id, item]));
   const body = $("resultsBody");
   body.innerHTML = "";
   if (!items.length) {
@@ -359,8 +433,15 @@ function renderResults(items) {
     checkbox.type = "checkbox";
     checkbox.checked = state.selected.has(item.id);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) state.selected.add(item.id);
-      else state.selected.delete(item.id);
+      if (checkbox.checked) {
+        state.selected.add(item.id);
+        if (!state.displayLabels.has(item.id)) {
+          state.displayLabels.set(item.id, String(state.selected.size));
+        }
+      } else {
+        state.selected.delete(item.id);
+        state.displayLabels.delete(item.id);
+      }
       updateSelectedCount();
     });
     checkboxCell.appendChild(checkbox);
@@ -387,12 +468,18 @@ function renderResults(items) {
     editButton.className = "ghost compact";
     editButton.textContent = "编辑";
     editButton.addEventListener("click", () => openQuestionEditor(item.id));
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "ghost compact";
+    copyButton.textContent = "复制";
+    copyButton.addEventListener("click", () => copyQuestion(item.id));
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "danger compact";
     deleteButton.textContent = "删除";
     deleteButton.addEventListener("click", () => deleteQuestion(item.id));
     actions.appendChild(editButton);
+    actions.appendChild(copyButton);
     actions.appendChild(deleteButton);
     actionCell.appendChild(actions);
     row.appendChild(actionCell);
@@ -401,6 +488,7 @@ function renderResults(items) {
 }
 
 async function searchQuestions() {
+  const [sortBy, sortOrder] = $("searchSort").value.split(":");
   const params = new URLSearchParams({
     block: $("searchBlock").value,
     main_type: $("searchType").value,
@@ -408,6 +496,10 @@ async function searchQuestions() {
     year: $("searchYear").value,
     source: $("searchSource").value,
     knowledge: $("searchKnowledge").value,
+    question_type: $("searchQuestionType").value,
+    query: $("searchQuery").value,
+    sort_by: sortBy,
+    sort_order: sortOrder,
   });
   const response = await fetch(`/api/questions?${params}`);
   const data = await response.json();
@@ -419,11 +511,17 @@ async function exportExam() {
   const mode = document.querySelector("input[name='exportMode']:checked").value;
   const result = $("exportResult");
   result.textContent = "正在生成...";
-  const response = await fetch("/api/export", {
+  const ids = Array.from(state.selected);
+  const displayLabels = {};
+  ids.forEach((id, index) => {
+    displayLabels[id] = state.displayLabels.get(id) || String(index + 1);
+  });
+  const separate = $("separateDocuments").checked;
+  const response = await fetch(separate ? "/api/export-set" : "/api/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      ids: Array.from(state.selected),
+      ids,
       mode,
       title: $("examTitle").value.trim() || "试卷",
       template: $("examTemplate").value || "a4_single",
@@ -431,6 +529,10 @@ async function exportExam() {
       total_score: $("examTotalScore").value.trim(),
       show_ids: $("showQuestionIds").checked,
       answers_new_page: $("answersNewPage").checked,
+      class_name: $("examClassName").value.trim(),
+      student_fields: $("studentFields").checked,
+      group_by_question_type: $("groupByQuestionType").checked,
+      display_labels: displayLabels,
     }),
   });
   const data = await response.json();
@@ -439,42 +541,48 @@ async function exportExam() {
     return;
   }
   result.innerHTML = "";
-  const markdownLink = document.createElement("a");
-  markdownLink.href = `/download/${encodeURIComponent(data.exam_md_filename)}`;
-  markdownLink.textContent = `下载 ${data.exam_md_filename}`;
-  result.appendChild(markdownLink);
-  if (data.docx_created) {
-    const wordLink = document.createElement("a");
-    wordLink.href = `/download/${encodeURIComponent(data.exam_docx_filename)}`;
-    wordLink.textContent = `下载 ${data.exam_docx_filename}`;
-    result.appendChild(wordLink);
+  const exportedFiles = data.files || [data];
+  for (const exported of exportedFiles) {
+    const markdownLink = document.createElement("a");
+    markdownLink.href = `/download/${encodeURIComponent(exported.exam_md_filename)}`;
+    markdownLink.textContent = `下载 ${exported.exam_md_filename}`;
+    result.appendChild(markdownLink);
+    if (exported.docx_created) {
+      const wordLink = document.createElement("a");
+      wordLink.href = `/download/${encodeURIComponent(exported.exam_docx_filename)}`;
+      wordLink.textContent = `下载 ${exported.exam_docx_filename}`;
+      result.appendChild(wordLink);
+    }
+    if (exported.preview_filename) {
+      const previewLink = document.createElement("a");
+      previewLink.href = `/preview/${encodeURIComponent(exported.preview_filename)}`;
+      previewLink.target = "_blank";
+      previewLink.rel = "noopener";
+      previewLink.textContent = `预览 ${exported.kind || "Word"}`;
+      result.appendChild(previewLink);
+    }
   }
-  if (data.preview_filename) {
-    const previewLink = document.createElement("a");
-    previewLink.href = `/preview/${encodeURIComponent(data.preview_filename)}`;
-    previewLink.target = "_blank";
-    previewLink.rel = "noopener";
-    previewLink.textContent = "打开 Word 排版预览";
-    result.appendChild(previewLink);
-  }
+  const summaryData = exportedFiles[0] || {};
   const summary = document.createElement("div");
-  const validation = data.validation || {};
-  const issueCount = Number((data.issues || {}).count || 0);
+  const validation = summaryData.validation || {};
+  const issueCount = exportedFiles.reduce((total, item) => total + Number((item.issues || {}).count || 0), 0);
   const validationText = validation.performed
     ? validation.ok
       ? `结构校验通过，发现 ${issueCount} 个版式问题`
       : "结构校验未通过"
     : "未执行 OfficeCLI 结构校验";
-  summary.textContent = `${data.template_name || "默认模板"} · ${data.engine || "markdown"} · ${validationText}`;
+  summary.textContent = separate
+    ? `已分别生成 ${exportedFiles.length} 份文件 · ${summaryData.template_name || "默认模板"} · 共发现 ${issueCount} 个版式问题`
+    : `${summaryData.template_name || "默认模板"} · ${summaryData.engine || "markdown"} · ${validationText}`;
   result.appendChild(summary);
-  if (data.pandoc_message) {
+  if (summaryData.pandoc_message) {
     const message = document.createElement("div");
-    message.textContent = data.pandoc_message;
+    message.textContent = summaryData.pandoc_message;
     result.appendChild(message);
   }
-  if (data.office_message) {
+  if (summaryData.office_message) {
     const message = document.createElement("div");
-    message.textContent = data.office_message;
+    message.textContent = summaryData.office_message;
     result.appendChild(message);
   }
 }
@@ -504,6 +612,7 @@ async function openQuestionEditor(questionId) {
   $("editQuestionId").textContent = questionId;
   $("editBlock").value = metadata["板块"] || "";
   $("editMainType").value = metadata["主类型"] || "";
+  $("editQuestionType").value = metadata["题型"] || "";
   $("editDifficulty").value = metadata["难度系数"] || "";
   $("editYear").value = metadata["年份"] || "";
   $("editSource").value = metadata["来源"] || "";
@@ -533,6 +642,7 @@ async function saveQuestionEdit() {
         难度系数: $("editDifficulty").value.trim(),
         年份: $("editYear").value.trim(),
         来源: $("editSource").value.trim(),
+        题型: $("editQuestionType").value,
       },
       sections: {
         题目: $("editQuestionText").value,
@@ -550,6 +660,55 @@ async function saveQuestionEdit() {
   $("editDialog").close();
   state.editingId = "";
   await searchQuestions();
+}
+
+async function copyQuestion(questionId) {
+  if (!confirm(`复制 ${questionId} 并生成一个新的永久题号吗？`)) return;
+  const response = await fetch(`/api/questions/${encodeURIComponent(questionId)}/copy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "复制失败");
+    return;
+  }
+  await searchQuestions();
+  alert(`已复制为 ${data.id}，你可以继续编辑新题。`);
+  await openQuestionEditor(data.id);
+}
+
+function openBatchEditor() {
+  if (!state.selected.size) {
+    alert("请先勾选要批量修改的题目。");
+    return;
+  }
+  $("batchDialog").showModal();
+}
+
+async function saveBatchEdit() {
+  const response = await fetch("/api/questions/batch-update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ids: Array.from(state.selected),
+      add_types: lines($("batchAddTypes").value),
+      remove_types: lines($("batchRemoveTypes").value),
+      add_knowledge: lines($("batchAddKnowledge").value),
+      remove_knowledge: lines($("batchRemoveKnowledge").value),
+      question_type: $("batchQuestionType").value,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.detail || "批量修改失败");
+    return;
+  }
+  $("batchDialog").close();
+  $("batchForm").reset();
+  await searchQuestions();
+  alert(`已修改 ${data.count} 道题。`);
 }
 
 async function deleteQuestion(questionId) {
@@ -692,12 +851,16 @@ function bindEvents() {
   $("searchBtn").addEventListener("click", searchQuestions);
   $("clearSelectionBtn").addEventListener("click", () => {
     state.selected.clear();
+    state.displayLabels.clear();
     updateSelectedCount();
     searchQuestions();
   });
   $("exportBtn").addEventListener("click", exportExam);
   $("closeEditBtn").addEventListener("click", () => $("editDialog").close());
   $("saveEditBtn").addEventListener("click", saveQuestionEdit);
+  $("batchEditBtn").addEventListener("click", openBatchEditor);
+  $("closeBatchBtn").addEventListener("click", () => $("batchDialog").close());
+  $("saveBatchBtn").addEventListener("click", saveBatchEdit);
   $("refreshMaintenanceBtn").addEventListener("click", refreshMaintenance);
   $("integrityBtn").addEventListener("click", checkIntegrity);
   $("rebuildIndexBtn").addEventListener("click", rebuildIndex);

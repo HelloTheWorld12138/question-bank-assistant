@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 APP_NAME = "高中物理题库助手"
-APP_VERSION = "0.3.0-dev"
+APP_VERSION = "0.4.0-dev"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,5 +73,7 @@ TYPES = {
     "JC": "基础题",
     "MX": "模型题",
 }
+
+QUESTION_TYPES = ("选择题", "填空题", "实验题", "计算题", "其他")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".wmf", ".emf"}

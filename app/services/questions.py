@@ -118,11 +118,14 @@ async def create_question(
     analysis_text: str = "",
     knowledge_points: str = "",
     extra_types: str = "",
+    question_type: str = "",
     remarks: str = "",
     draft_id: str = "",
     files: list[UploadFile] | None = None,
 ) -> dict[str, Any]:
     storage.ensure_dirs()
+    if question_type and question_type not in config.QUESTION_TYPES:
+        raise AppError("未知题型")
     if draft_id and re.fullmatch(r"[a-f0-9-]{36}", draft_id):
         draft_dir = config.DRAFT_ASSETS_DIR / draft_id
         if draft_dir.exists():
@@ -154,6 +157,7 @@ async def create_question(
             "年份": (year or "").strip(),
             "来源": source.strip(),
             "解析来源": "教师上传",
+            "题型": question_type,
             "图片": images,
         }
         sections = {"题目": question_text, "答案": answer_text, "解析": analysis_text, "备注": remarks}
@@ -181,6 +185,10 @@ def search_questions(
     year: str = "",
     source: str = "",
     knowledge: str = "",
+    question_type: str = "",
+    query: str = "",
+    sort_by: str = "id",
+    sort_order: str = "asc",
 ) -> list[dict[str, Any]]:
     results = []
     for item in storage.read_all_questions():
@@ -196,8 +204,37 @@ def search_questions(
             continue
         if not matches(item["知识点"], knowledge):
             continue
+        if not matches(item["题型"], question_type):
+            continue
+        if query:
+            searchable = "\n".join(
+                str(item.get(key, ""))
+                for key in ("id", "题目", "答案", "解析", "备注", "来源", "知识点", "类型")
+            )
+            if query.casefold() not in searchable.casefold():
+                continue
         results.append(item)
+
+    sort_keys = {
+        "id": lambda item: str(item.get("id", "")),
+        "year": lambda item: str(item.get("年份", "")),
+        "updated": lambda item: str(item.get("更新时间", "")),
+        "difficulty": lambda item: _numeric_sort_value(item.get("难度系数", "")),
+    }
+    key = sort_keys.get(sort_by)
+    if key is None:
+        raise AppError("未知排序方式")
+    if sort_order not in {"asc", "desc"}:
+        raise AppError("未知排序方向")
+    results.sort(key=key, reverse=sort_order == "desc")
     return results
+
+
+def _numeric_sort_value(value: Any) -> tuple[int, float | str]:
+    try:
+        return (0, float(str(value).strip()))
+    except (TypeError, ValueError):
+        return (1, str(value or ""))
 
 
 def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -224,6 +261,7 @@ def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]
         "年份",
         "来源",
         "解析来源",
+        "题型",
         "图片",
     }
     for key in allowed_metadata:
@@ -236,6 +274,121 @@ def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]
             sections[key] = str(section_updates[key] or "")
     path = storage.write_question(question_id, metadata, sections)
     return {"id": question_id, "file": str(path), "metadata": storage.read_question(question_id)[0]}
+
+
+def copy_question(question_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    source_metadata, source_sections = storage.read_question(question_id)
+    options = payload or {}
+    block_code = str(options.get("block_code") or question_id[:2])
+    type_code = str(options.get("type_code") or question_id[2:4])
+    if block_code not in config.BLOCKS or type_code not in config.TYPES:
+        raise AppError("复制题目的板块或主类型无效")
+
+    created_assets: list[Path] = []
+    with reserve_question_id(block_code, type_code) as copied_id:
+        try:
+            copied_images: list[str] = []
+            replacements: dict[str, str] = {}
+            for index, raw_name in enumerate(source_metadata.get("图片", []) or [], start=1):
+                source_name = Path(str(raw_name)).name
+                source = config.ASSETS_DIR / source_name
+                if not source.exists():
+                    raise AppError(f"原题图片不存在，无法复制：{source_name}")
+                copied_name = f"{copied_id}_{index:02d}{source.suffix.lower()}"
+                target = config.ASSETS_DIR / copied_name
+                shutil.copy2(source, target)
+                created_assets.append(target)
+                copied_images.append(copied_name)
+                replacements[source_name] = copied_name
+
+            sections = dict(source_sections)
+            for section_name, content in sections.items():
+                for old_name, new_name in replacements.items():
+                    content = content.replace(old_name, new_name)
+                sections[section_name] = content
+
+            metadata = dict(source_metadata)
+            metadata.pop("创建时间", None)
+            metadata.pop("更新时间", None)
+            metadata.update(
+                {
+                    "id": copied_id,
+                    "板块": config.BLOCKS[block_code],
+                    "主类型": config.TYPES[type_code],
+                    "图片": copied_images,
+                    "复制自": question_id,
+                }
+            )
+            types = [str(item) for item in metadata.get("类型", []) or [] if str(item).strip()]
+            main_type = config.TYPES[type_code]
+            metadata["类型"] = [main_type, *[item for item in types if item != main_type]]
+            path = storage.write_question(copied_id, metadata, sections)
+        except Exception:
+            for asset in created_assets:
+                asset.unlink(missing_ok=True)
+            storage.question_path(copied_id).unlink(missing_ok=True)
+            raise
+    return {"id": copied_id, "source_id": question_id, "file": str(path), "images": copied_images}
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in re.split(r"[\n,，]+", value) if item.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    raise AppError("批量修改的标签格式不正确")
+
+
+def batch_update_questions(payload: dict[str, Any]) -> dict[str, Any]:
+    ids = [storage.validate_question_id(item) for item in payload.get("ids", [])]
+    if not ids:
+        raise AppError("请先选择要批量修改的题目")
+    add_types = _string_list(payload.get("add_types"))
+    remove_types = set(_string_list(payload.get("remove_types")))
+    add_knowledge = _string_list(payload.get("add_knowledge"))
+    remove_knowledge = set(_string_list(payload.get("remove_knowledge")))
+    question_type = payload.get("question_type")
+    if question_type not in (None, "", *config.QUESTION_TYPES):
+        raise AppError("未知题型")
+
+    originals: dict[str, str] = {}
+    updated: list[str] = []
+    try:
+        for question_id in ids:
+            path = storage.question_path(question_id)
+            if not path.exists():
+                raise AppError(f"题目不存在：{question_id}")
+            originals[question_id] = path.read_text(encoding="utf-8")
+            metadata, sections = storage.read_question(question_id)
+            main_type = str(metadata.get("主类型") or config.TYPES.get(question_id[2:4], ""))
+            types = [
+                item
+                for item in _string_list(metadata.get("类型"))
+                if item not in remove_types and item != main_type
+            ]
+            metadata["类型"] = [main_type, *types]
+            for item in add_types:
+                if item not in metadata["类型"]:
+                    metadata["类型"].append(item)
+
+            knowledge = [
+                item for item in _string_list(metadata.get("知识点")) if item not in remove_knowledge
+            ]
+            for item in add_knowledge:
+                if item not in knowledge:
+                    knowledge.append(item)
+            metadata["知识点"] = knowledge
+            if question_type not in (None, ""):
+                metadata["题型"] = question_type
+            storage.write_question(question_id, metadata, sections)
+            updated.append(question_id)
+    except Exception:
+        for question_id, content in originals.items():
+            storage.atomic_write_text(storage.question_path(question_id), content)
+        raise
+    return {"updated": updated, "count": len(updated)}
 
 
 def rewrite_export_image_links(markdown: str, image_names: list[str]) -> str:
@@ -274,7 +427,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     mode = payload.get("mode") or "questions"
     if not ids:
         raise AppError("请先选择题目")
-    if mode not in {"questions", "answers", "analysis"}:
+    if mode not in {"questions", "answers", "analysis", "answer_sheet", "analysis_sheet"}:
         raise AppError("未知导出模式")
 
     exam_title = str(payload.get("title") or "试卷").strip() or "试卷"
@@ -284,6 +437,12 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
     template_path, template_spec = resolve_exam_template(template_key)
     show_ids = payload.get("show_ids", True) is not False
     answers_new_page = payload.get("answers_new_page", True) is not False
+    group_by_question_type = payload.get("group_by_question_type", False) is True
+    display_labels = payload.get("display_labels") or {}
+    if not isinstance(display_labels, dict):
+        raise AppError("展示题号格式不正确")
+    class_name = str(payload.get("class_name") or "").strip()
+    student_fields = payload.get("student_fields", False) is True
 
     title_yaml = json.dumps(exam_title, ensure_ascii=False)
     parts: list[str] = ["---", f"title: {title_yaml}", "---", ""]
@@ -292,12 +451,25 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         exam_meta.append(f"考试时间：{duration}")
     if total_score:
         exam_meta.append(f"满分：{total_score}")
+    if class_name:
+        exam_meta.append(f"班级：{class_name}")
     if exam_meta:
         parts.extend([f"**{'　　'.join(exam_meta)}**", ""])
-    parts.extend(["# 题目", ""])
+    if student_fields:
+        parts.extend(["**姓名：__________　学号：__________　得分：__________**", ""])
+    include_questions = mode in {"questions", "answers", "analysis"}
+    include_answers = mode in {"answers", "analysis", "answer_sheet", "analysis_sheet"}
+    include_analysis = mode in {"analysis", "analysis_sheet"}
+    if include_questions:
+        parts.extend(["# 题目", ""])
+    elif mode == "answer_sheet":
+        parts.extend(["# 参考答案", ""])
+    else:
+        parts.extend(["# 答案与解析", ""])
 
     missing: list[str] = []
     exported_questions: list[dict[str, str]] = []
+    previous_question_type = ""
     for number, question_id in enumerate(ids, start=1):
         try:
             metadata, sections = storage.read_question(str(question_id))
@@ -309,28 +481,38 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         question_text = rewrite_export_image_links(sections.get("题目", ""), image_names)
         answer_text = rewrite_export_image_links(sections.get("答案", ""), image_names)
         analysis_text = rewrite_export_image_links(sections.get("解析", ""), image_names)
-        label = f"{number}. 【{question_label}】" if show_ids else f"{number}."
-        parts.extend([f"## {label}", "", question_text.strip(), ""])
-        section_blob = "\n".join(sections.values())
-        for image in image_names:
-            if str(image) not in section_blob:
-                parts.extend([f"![]({(config.ASSETS_DIR / image).as_posix()})", ""])
+        display_label = str(display_labels.get(str(question_id)) or number).strip()[:20]
+        label = f"{display_label}. 【{question_label}】" if show_ids else f"{display_label}."
+        question_type = str(metadata.get("题型") or "其他")
+        if include_questions and group_by_question_type and question_type != previous_question_type:
+            parts.extend([f"## {question_type}", ""])
+            previous_question_type = question_type
+        if include_questions:
+            parts.extend([f"### {label}" if group_by_question_type else f"## {label}", "", question_text.strip(), ""])
+            section_blob = "\n".join(sections.values())
+            for image in image_names:
+                if str(image) not in section_blob:
+                    parts.extend([f"![]({(config.ASSETS_DIR / image).as_posix()})", ""])
         exported_questions.append(
             {
                 "label": label,
                 "answer": answer_text.strip() or "（未提供答案）",
                 "analysis": analysis_text.strip() or "（未提供解析）",
+                "question_type": question_type,
             }
         )
 
-    if mode in {"answers", "analysis"}:
+    if include_answers and include_questions:
         if answers_new_page:
             parts.append(page_break_markdown())
         parts.extend(["# 参考答案", ""])
         for item in exported_questions:
             parts.extend([f"## {item['label']}", "", item["answer"], ""])
+    elif mode in {"answer_sheet", "analysis_sheet"}:
+        for item in exported_questions:
+            parts.extend([f"## {item['label']}", "", item["answer"], ""])
 
-    if mode == "analysis":
+    if include_analysis:
         if answers_new_page:
             parts.append(page_break_markdown())
         parts.extend(["# 解析", ""])
@@ -338,7 +520,13 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             parts.extend([f"## {item['label']}", "", item["analysis"], ""])
 
     safe_title = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "_", exam_title).strip("_") or "试卷"
-    mode_name = {"questions": "题目", "answers": "题目答案", "analysis": "题目答案解析"}[mode]
+    mode_name = {
+        "questions": "题目",
+        "answers": "题目答案",
+        "analysis": "题目答案解析",
+        "answer_sheet": "答案",
+        "analysis_sheet": "解析",
+    }[mode]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     stem = f"{timestamp}_{safe_title}_{mode_name}"
     exam_md = config.EXPORT_DIR / f"{stem}.md"
@@ -411,4 +599,21 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
         "template_name": template_spec["name"],
         "engine": export_engine,
         "missing": missing,
+        "kind": {
+            "questions": "questions",
+            "answers": "combined_answers",
+            "analysis": "combined_analysis",
+            "answer_sheet": "answers",
+            "analysis_sheet": "analysis",
+        }[mode],
     }
+
+
+def export_exam_set(payload: dict[str, Any]) -> dict[str, Any]:
+    files = []
+    for mode in ("questions", "answer_sheet", "analysis_sheet"):
+        item_payload = dict(payload)
+        item_payload["mode"] = mode
+        exported = export_exam(item_payload)
+        files.append(exported)
+    return {"files": files, "count": len(files)}

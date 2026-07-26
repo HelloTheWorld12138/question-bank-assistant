@@ -541,6 +541,36 @@ td:nth-child(2) {
   gap: 8px;
 }
 
+.exam-selection-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 18px;
+}
+
+.exam-selection-item {
+  display: grid;
+  grid-template-columns: 28px minmax(220px, 1fr) 84px auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfcff;
+}
+
+.exam-selection-item span {
+  overflow: hidden;
+  color: var(--ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-selection-item input {
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: center;
+}
+
 .maintenance-item {
   display: flex;
   justify-content: space-between;
@@ -566,6 +596,10 @@ td:nth-child(2) {
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 28px 80px rgba(23, 33, 43, 0.24);
+}
+
+.compact-dialog {
+  width: min(760px, calc(100% - 28px));
 }
 
 .edit-dialog::backdrop {
@@ -622,5 +656,13 @@ td:nth-child(2) {
   .layout {
     width: min(100% - 20px, 1240px);
     margin-top: 14px;
+  }
+
+  .exam-selection-item {
+    grid-template-columns: 28px minmax(120px, 1fr) 72px;
+  }
+
+  .exam-selection-item button {
+    grid-row: 2;
   }
 }

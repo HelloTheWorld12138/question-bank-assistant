@@ -223,3 +223,127 @@ def test_rebuild_index_uses_existing_question_files(isolated_data):
 
     assert storage.rebuild_index() == {"LXCX": 12}
     assert questions.next_question_id("LX", "CX") == "LXCX0013"
+
+
+def test_copy_question_gets_new_id_and_copies_bound_images(isolated_data):
+    image = config.ASSETS_DIR / "LXJC0001_01.png"
+    image.write_bytes(b"image")
+    storage.write_question(
+        "LXJC0001",
+        {
+            "id": "LXJC0001",
+            "板块": "力学",
+            "主类型": "基础题",
+            "类型": ["基础题"],
+            "知识点": ["速度"],
+            "题型": "选择题",
+            "图片": [image.name],
+        },
+        {
+            "题目": "![](../assets/LXJC0001_01.png)\n原题",
+            "答案": "A",
+            "解析": "解析",
+            "备注": "",
+        },
+    )
+
+    copied = questions.copy_question("LXJC0001")
+
+    assert copied["id"] == "LXJC0002"
+    metadata, sections = storage.read_question("LXJC0002")
+    assert metadata["复制自"] == "LXJC0001"
+    assert metadata["图片"] == ["LXJC0002_01.png"]
+    assert "LXJC0002_01.png" in sections["题目"]
+    assert (config.ASSETS_DIR / "LXJC0002_01.png").read_bytes() == b"image"
+
+
+def test_batch_update_and_sorted_search(isolated_data):
+    for question_id, year, difficulty in (
+        ("LXJC0001", "2025", "0.72"),
+        ("LXJC0002", "2026", "0.45"),
+    ):
+        storage.write_question(
+            question_id,
+            {
+                "id": question_id,
+                "板块": "力学",
+                "主类型": "基础题",
+                "类型": ["基础题"],
+                "知识点": ["速度"],
+                "难度系数": difficulty,
+                "年份": year,
+                "题型": "选择题",
+                "图片": [],
+            },
+            {"题目": f"{year} 年题目", "答案": "", "解析": "", "备注": ""},
+        )
+
+    result = questions.batch_update_questions(
+        {
+            "ids": ["LXJC0001", "LXJC0002"],
+            "add_types": ["易错题"],
+            "add_knowledge": ["匀变速直线运动"],
+            "question_type": "计算题",
+        }
+    )
+    assert result["updated"] == ["LXJC0001", "LXJC0002"]
+    metadata, _ = storage.read_question("LXJC0001")
+    assert metadata["类型"] == ["基础题", "易错题"]
+    assert metadata["知识点"] == ["速度", "匀变速直线运动"]
+    assert metadata["题型"] == "计算题"
+
+    items = questions.search_questions(
+        query="年题目",
+        question_type="计算题",
+        sort_by="difficulty",
+        sort_order="asc",
+    )
+    assert [item["id"] for item in items] == ["LXJC0002", "LXJC0001"]
+
+
+def test_export_set_keeps_custom_order_labels_and_separate_files(isolated_data, monkeypatch):
+    for question_id, question_type in (("LXJC0001", "选择题"), ("LXJC0002", "计算题")):
+        storage.write_question(
+            question_id,
+            {
+                "id": question_id,
+                "板块": "力学",
+                "主类型": "基础题",
+                "类型": ["基础题"],
+                "知识点": [],
+                "题型": question_type,
+                "图片": [],
+            },
+            {
+                "题目": f"{question_id} 的题目",
+                "答案": f"{question_id} 的答案",
+                "解析": f"{question_id} 的解析",
+                "备注": "",
+            },
+        )
+    monkeypatch.setattr(questions, "find_pandoc", lambda: None)
+
+    exported = questions.export_exam_set(
+        {
+            "ids": ["LXJC0002", "LXJC0001"],
+            "title": "分卷测试",
+            "display_labels": {"LXJC0002": "A1", "LXJC0001": "A2"},
+            "show_ids": False,
+            "group_by_question_type": True,
+            "class_name": "高二（1）班",
+            "student_fields": True,
+        }
+    )
+
+    assert [item["kind"] for item in exported["files"]] == ["questions", "answers", "analysis"]
+    question_file = config.EXPORT_DIR / exported["files"][0]["exam_md_filename"]
+    answer_file = config.EXPORT_DIR / exported["files"][1]["exam_md_filename"]
+    analysis_file = config.EXPORT_DIR / exported["files"][2]["exam_md_filename"]
+    question_markdown = question_file.read_text(encoding="utf-8")
+    assert question_markdown.index("LXJC0002 的题目") < question_markdown.index("LXJC0001 的题目")
+    assert "## A1." in question_markdown
+    assert "高二（1）班" in question_markdown
+    assert "姓名：__________" in question_markdown
+    assert "LXJC0002 的答案" not in question_markdown
+    assert "LXJC0002 的答案" in answer_file.read_text(encoding="utf-8")
+    assert "LXJC0002 的解析" in analysis_file.read_text(encoding="utf-8")
