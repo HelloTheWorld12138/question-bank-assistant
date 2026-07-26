@@ -192,3 +192,36 @@ def test_batch_pdf_import_requires_teacher_confirmation(isolated_data):
         pending = client.get(f"/api/import/tasks/{task['id']}").json()
         assert pending["status"] == "部分入库"
         assert pending["drafts"][1]["committed_id"] == ""
+
+
+def test_assistant_parse_and_recommend_api(isolated_data):
+    from app import storage
+
+    storage.write_question(
+        "LXJC0001",
+        {
+            "id": "LXJC0001",
+            "板块": "力学",
+            "主类型": "基础题",
+            "类型": ["基础题"],
+            "知识点": ["牛顿第二定律"],
+            "题型": "选择题",
+            "难度系数": 0.8,
+            "年份": 2026,
+            "来源": "教师自编",
+            "图片": [],
+        },
+        {"题目": "一个物体在恒力作用下运动。", "答案": "A", "解析": "略", "备注": ""},
+    )
+    with TestClient(app) as client:
+        parsed = client.get("/api/assistant/parse", params={"query": "找1道力学基础题"})
+        assert parsed.status_code == 200
+        assert parsed.json()["blocks"] == ["力学"]
+
+        recommended = client.post(
+            "/api/assistant/recommend",
+            json={"query": "找1道力学基础题，牛顿第二定律"},
+        )
+        assert recommended.status_code == 200
+        assert recommended.json()["items"][0]["id"] == "LXJC0001"
+        assert recommended.json()["requires_teacher_selection"] is True

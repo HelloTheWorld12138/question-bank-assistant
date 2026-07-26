@@ -522,3 +522,74 @@ def classify_question(payload: dict[str, Any]) -> dict[str, Any]:
         "model": settings["model"],
         "sent_fields": ["题目正文"],
     }
+
+
+def rank_question_candidates(
+    *,
+    query: str,
+    candidates: list[dict[str, Any]],
+    count: int,
+) -> dict[str, Any]:
+    if not candidates:
+        return {"recommendations": []}
+    provider, _settings = _configured_provider(require_enabled=True)
+    candidates = candidates[:50]
+    candidate_ids = [str(item["id"]) for item in candidates]
+    limit = max(1, min(int(count), len(candidate_ids)))
+    schema: dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["recommendations"],
+        "properties": {
+            "recommendations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": limit,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["id", "reason"],
+                    "properties": {
+                        "id": {"type": "string", "enum": candidate_ids},
+                        "reason": {"type": "string", "minLength": 1, "maxLength": 180},
+                    },
+                },
+            }
+        },
+    }
+    safe_candidates = [
+        {
+            "id": item["id"],
+            "板块": item["block"],
+            "类型": item["types"],
+            "知识点": item["knowledge_points"],
+            "题型": item["question_type"],
+            "难度系数": item["difficulty"],
+            "年份": item["year"],
+            "来源": item["source"],
+            "题目预览": item["preview"],
+            "预计分钟": item["estimated_minutes"],
+        }
+        for item in candidates
+    ]
+    result = provider.chat_json(
+        (
+            "你是高中物理教师的选题助手。只允许从候选题号中排序并写简短推荐理由，"
+            "不解题、不改题、不生成答案。必须输出严格 JSON。"
+        ),
+        (
+            f"教师要求：{query[:1000]}\n"
+            f"最多推荐 {limit} 道。候选题最少元数据如下：\n"
+            f"{json.dumps(safe_candidates, ensure_ascii=False)}"
+        ),
+        schema,
+    )
+    try:
+        jsonschema.validate(result, schema)
+    except jsonschema.ValidationError as exc:
+        raise AppError("模型推荐结果格式不正确，已回退到本地排序。", status_code=502) from exc
+    recommendations = result["recommendations"]
+    ids = [str(item["id"]) for item in recommendations]
+    if len(ids) != len(set(ids)):
+        raise AppError("模型推荐结果包含重复题号，已回退到本地排序。", status_code=502)
+    return result

@@ -159,3 +159,59 @@ def test_ollama_health_and_classification_need_no_cloud_consent(isolated_data, m
 
     assert health["ok"] is True
     assert result["draft"]["板块"] == "电学"
+
+
+def test_model_candidate_ranking_uses_minimal_metadata(isolated_data, monkeypatch):
+    secrets = MemorySecrets()
+    secrets.set("deepseek", "sk-test")
+    monkeypatch.setattr(models, "SECRET_STORE", secrets)
+    models.save_model_settings(
+        {"provider": "deepseek", "enabled": True, "max_retries": 0}
+    )
+
+    def handler(request):
+        body = json.loads(request.content)
+        prompt = body["messages"][-1]["content"]
+        assert "保密答案" not in prompt
+        assert "完整解析" not in prompt
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "recommendations": [
+                                        {"id": "LXCX0001", "reason": "匹配动力学创新情境"}
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(models, "HTTP_TRANSPORT", httpx.MockTransport(handler))
+    result = models.rank_question_candidates(
+        query="找一道力学创新题",
+        count=1,
+        candidates=[
+            {
+                "id": "LXCX0001",
+                "block": "力学",
+                "types": ["创新题"],
+                "knowledge_points": ["牛顿第二定律"],
+                "question_type": "计算题",
+                "difficulty": "0.5",
+                "year": "2026",
+                "source": "教师自编",
+                "preview": "如图，求物体加速度。",
+                "estimated_minutes": 12,
+            }
+        ],
+    )
+
+    assert result["recommendations"][0]["id"] == "LXCX0001"

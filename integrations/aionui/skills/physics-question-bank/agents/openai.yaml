@@ -1,0 +1,4 @@
+interface:
+  display_name: "高中物理题库智能体"
+  short_description: "用自然语言检索本地高中物理题库并生成可审核的组卷建议"
+  default_prompt: "Use $physics-question-bank to find suitable local physics questions and prepare an exam selection."

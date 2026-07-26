@@ -104,3 +104,20 @@ set FORMULA_OCR_COMMAND=pix2tex "{image_file}" > "{output_file}"
 OCR 结果不会直接入库。页面会显示原公式图片和 LaTeX 文本框，老师确认后才会替换为可编辑公式。
 
 如果没有检测到公式 OCR，普通 Word 不受影响；疑似公式图片会保留原图，并要求老师手动填写和确认 LaTeX 后再入库。
+
+## 高级找题与组卷接入
+
+OpenCode 不需要直接遍历或修改 `vault`。独立 APP 已提供稳定的本地接口和 CLI：
+
+```bash
+python -m app.cli recommend "找5道近三年力学创新题，中等难度，约45分钟"
+```
+
+也可以复用 AionUI Skill 内只依赖 Python 标准库的本地客户端：
+
+```bash
+python integrations/aionui/skills/physics-question-bank/scripts/question_bank_api.py recommend "找5道力学创新题"
+```
+
+推荐结果只是候选题。教师确认题号后，才调用 `export`；不要让 OpenCode 直接修改
+Markdown、图片、`index.json`，也不要让它自动调用删除或恢复接口。

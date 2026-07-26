@@ -607,6 +607,69 @@ td:nth-child(2) {
   margin-top: 10px;
 }
 
+.assistant-search {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid #bdd2eb;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #f7faff, #f1f6fc);
+}
+
+.assistant-query-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.assistant-query-row button {
+  min-width: 118px;
+}
+
+.assistant-options,
+.assistant-recommendation-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.assistant-options .checkbox-line {
+  flex: 1;
+}
+
+.assistant-recommendations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.assistant-recommendation-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.assistant-recommendation-heading strong {
+  color: var(--blue-dark);
+}
+
+.assistant-preview {
+  color: #30445b;
+  line-height: 1.55;
+}
+
+.assistant-reason {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .ai-assist-box {
   display: flex;
   justify-content: space-between;
@@ -753,6 +816,7 @@ td:nth-child(2) {
   .app-header,
   .section-title,
   .import-draft-header,
+  .assistant-query-row,
   .ai-assist-box {
     display: grid;
   }
@@ -780,5 +844,11 @@ td:nth-child(2) {
 
   .exam-selection-item button {
     grid-row: 2;
+  }
+
+  .assistant-options,
+  .assistant-recommendation-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

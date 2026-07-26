@@ -11,6 +11,7 @@ const state = {
   modelSettings: null,
   modelProviders: [],
   importTask: null,
+  assistantRecommendations: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -417,7 +418,9 @@ function moveSelectedQuestion(index, delta) {
 }
 
 function renderResults(items) {
-  state.resultItems = new Map(items.map((item) => [item.id, item]));
+  for (const item of items) {
+    state.resultItems.set(item.id, item);
+  }
   const body = $("resultsBody");
   body.innerHTML = "";
   if (!items.length) {
@@ -508,6 +511,106 @@ async function searchQuestions() {
   const data = await response.json();
   renderResults(data.items || []);
   updateSelectedCount();
+}
+
+function renderAssistantRecommendations(data) {
+  state.assistantRecommendations = data.items || [];
+  const holder = $("assistantRecommendations");
+  holder.innerHTML = "";
+  $("assistantAddAllBtn").disabled = !state.assistantRecommendations.length;
+  const parsed = data.parsed || {};
+  const conditions = [
+    ...(parsed.blocks || []),
+    ...(parsed.types || []),
+    ...(parsed.knowledge_points || []),
+    ...(parsed.question_types || []),
+  ];
+  const summary =
+    `推荐 ${data.recommended_count || 0} 道 / 候选 ${data.candidate_count || 0} 道` +
+    ` · 预计 ${data.estimated_minutes || 0} 分钟` +
+    ` · ${data.used_ai ? "模型增强排序" : "本地排序"}` +
+    (conditions.length ? ` · 识别条件：${conditions.join("、")}` : "");
+  const warnings = (data.warnings || []).length ? `；${data.warnings.join("；")}` : "";
+  $("assistantResult").textContent = summary + warnings;
+
+  for (const item of state.assistantRecommendations) {
+    state.resultItems.set(item.id, {
+      id: item.id,
+      "题型": item.question_type,
+      preview: item.preview,
+    });
+    const card = document.createElement("article");
+    card.className = "assistant-recommendation-card";
+    const heading = document.createElement("div");
+    heading.className = "assistant-recommendation-heading";
+    const title = document.createElement("strong");
+    title.textContent = `${item.id} · ${item.block} · ${item.main_type}`;
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "ghost compact";
+    add.textContent = state.selected.has(item.id) ? "已在试卷中" : "加入组卷";
+    add.disabled = state.selected.has(item.id);
+    add.addEventListener("click", () => {
+      state.selected.add(item.id);
+      if (!state.displayLabels.has(item.id)) state.displayLabels.set(item.id, String(state.selected.size));
+      add.textContent = "已在试卷中";
+      add.disabled = true;
+      updateSelectedCount();
+    });
+    heading.append(title, add);
+    const preview = document.createElement("div");
+    preview.className = "assistant-preview";
+    preview.textContent = item.preview || "暂无题目预览";
+    const reason = document.createElement("div");
+    reason.className = "assistant-reason";
+    reason.textContent = `推荐理由：${item.reason}；预计 ${item.estimated_minutes} 分钟`;
+    card.append(heading, preview, reason);
+    holder.appendChild(card);
+  }
+}
+
+async function recommendQuestions() {
+  const query = $("assistantQuery").value.trim();
+  if (!query) {
+    alert("请先用一句话描述找题要求。");
+    return;
+  }
+  const useAi = $("assistantUseAi").checked;
+  let consent = true;
+  if (useAi && state.modelSettings?.cloud) {
+    consent = confirm(
+      "将把找题要求和本地筛选后的候选题元数据、题目短预览发送到所选云模型。" +
+        "不会发送答案、完整解析或整个题库。是否继续？",
+    );
+    if (!consent) return;
+  }
+  $("assistantRecommendBtn").disabled = true;
+  $("assistantResult").textContent = "正在本机解析要求并筛选候选题……";
+  const response = await fetch("/api/assistant/recommend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, use_ai: useAi, consent }),
+  });
+  const data = await response.json();
+  $("assistantRecommendBtn").disabled = false;
+  if (!response.ok) {
+    $("assistantResult").textContent = data.detail || "智能找题失败";
+    return;
+  }
+  renderAssistantRecommendations(data);
+}
+
+function addAllRecommendations() {
+  for (const item of state.assistantRecommendations) {
+    if (state.selected.has(item.id)) continue;
+    state.selected.add(item.id);
+    state.displayLabels.set(item.id, String(state.selected.size));
+  }
+  updateSelectedCount();
+  for (const button of $("assistantRecommendations").querySelectorAll("button")) {
+    button.textContent = "已在试卷中";
+    button.disabled = true;
+  }
 }
 
 async function exportExam() {
@@ -1387,6 +1490,8 @@ function bindEvents() {
   $("files").addEventListener("change", renderImagePreview);
   $("saveBtn").addEventListener("click", saveQuestion);
   $("searchBtn").addEventListener("click", searchQuestions);
+  $("assistantRecommendBtn").addEventListener("click", recommendQuestions);
+  $("assistantAddAllBtn").addEventListener("click", addAllRecommendations);
   $("clearSelectionBtn").addEventListener("click", () => {
     state.selected.clear();
     state.displayLabels.clear();

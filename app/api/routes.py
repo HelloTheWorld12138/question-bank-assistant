@@ -10,7 +10,15 @@ from app import config, knowledge, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
-from app.services import documents, imports as import_service, maintenance, models, office, questions
+from app.services import (
+    assistant,
+    documents,
+    imports as import_service,
+    maintenance,
+    models,
+    office,
+    questions,
+)
 
 
 api_router = APIRouter(prefix="/api")
@@ -180,6 +188,16 @@ def search_questions(
             sort_order=sort_order,
         )
     }
+
+
+@api_router.get("/assistant/parse")
+def parse_assistant_query(query: str) -> dict[str, Any]:
+    return assistant.parse_query(query)
+
+
+@api_router.post("/assistant/recommend")
+def recommend_questions(payload: dict[str, Any]) -> dict[str, Any]:
+    return assistant.recommend_questions(payload)
 
 
 @api_router.get("/questions/{question_id}")

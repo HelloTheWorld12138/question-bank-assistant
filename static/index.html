@@ -183,6 +183,26 @@
             <button type="button" id="searchBtn">搜索题库</button>
           </div>
         </div>
+        <div class="assistant-search">
+          <div class="minor-title">用一句话智能找题（本地规则可用）</div>
+          <div class="assistant-query-row">
+            <textarea
+              id="assistantQuery"
+              rows="2"
+              placeholder="例如：找 5 道近三年力学创新题，中等难度，覆盖牛顿第二定律，约 45 分钟，带解析"
+            ></textarea>
+            <button type="button" id="assistantRecommendBtn">生成推荐</button>
+          </div>
+          <div class="assistant-options">
+            <label class="checkbox-line">
+              <input id="assistantUseAi" type="checkbox" />
+              使用已配置模型优化候选排序（可选）
+            </label>
+            <button type="button" id="assistantAddAllBtn" class="secondary" disabled>将推荐题加入组卷</button>
+          </div>
+          <div id="assistantResult" class="result-box">自然语言先在本机解析并筛选；不用 AI 也能工作。</div>
+          <div id="assistantRecommendations" class="assistant-recommendations"></div>
+        </div>
         <div class="grid">
           <label class="wide">
             全文关键词
