@@ -23,6 +23,7 @@ __pycache__/
 # Runtime exports and logs
 exports/*
 !exports/.gitkeep
+logs/
 *.log
 
 # Local generated vault data
