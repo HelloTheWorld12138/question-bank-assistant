@@ -6,11 +6,11 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
 
-from app import config, storage
+from app import config, knowledge, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
-from app.services import documents, maintenance, office, questions
+from app.services import documents, maintenance, models, office, questions
 
 
 api_router = APIRouter(prefix="/api")
@@ -34,6 +34,7 @@ def options() -> dict[str, Any]:
         "blocks": [{"code": code, "name": name} for code, name in config.BLOCKS.items()],
         "types": [{"code": code, "name": name} for code, name in config.TYPES.items()],
         "question_types": list(config.QUESTION_TYPES),
+        "knowledge_points": knowledge.knowledge_by_block(),
         "pandoc": documents.find_pandoc() is not None,
         "agent": opencode_available(),
         "formula_ocr": formula_ocr_available(),
@@ -198,6 +199,26 @@ def create_backup(payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
 @api_router.post("/backups/{filename}/restore")
 def restore_backup(filename: str) -> dict[str, Any]:
     return maintenance.restore_backup(filename)
+
+
+@api_router.get("/models/settings")
+def get_model_settings() -> dict[str, Any]:
+    return {"settings": models.load_model_settings(), "providers": models.provider_catalog()}
+
+
+@api_router.put("/models/settings")
+def update_model_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    return {"settings": models.save_model_settings(payload), "providers": models.provider_catalog()}
+
+
+@api_router.post("/models/test")
+def test_model_connection() -> dict[str, Any]:
+    return models.test_model_connection()
+
+
+@api_router.post("/ai/classify")
+def classify_question(payload: dict[str, Any]) -> dict[str, Any]:
+    return models.classify_question(payload)
 
 
 @download_router.get("/download/{filename}")

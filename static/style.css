@@ -505,6 +505,28 @@ td:nth-child(2) {
   margin-top: 12px;
 }
 
+.notice {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #c8d9ef;
+  border-radius: 8px;
+  background: #f2f7fd;
+  color: #30445b;
+  line-height: 1.65;
+}
+
+.ai-assist-box {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c8d9ef;
+  border-radius: 9px;
+  background: #f7faff;
+}
+
 .result-box a {
   display: inline-block;
   margin-right: 12px;
@@ -637,7 +659,8 @@ td:nth-child(2) {
 
 @media (max-width: 840px) {
   .app-header,
-  .section-title {
+  .section-title,
+  .ai-assist-box {
     display: grid;
   }
 

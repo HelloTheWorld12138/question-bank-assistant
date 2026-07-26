@@ -8,6 +8,8 @@ const state = {
   editingId: "",
   resultItems: new Map(),
   displayLabels: new Map(),
+  modelSettings: null,
+  modelProviders: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -843,6 +845,156 @@ async function restoreDefaultTemplates() {
   $("maintenanceResult").textContent = `已恢复默认模板：${(data.restored || []).join("、") || "无需恢复"}`;
 }
 
+function renderModelSettings(data) {
+  state.modelSettings = data.settings || {};
+  state.modelProviders = data.providers || state.modelProviders;
+  const providerSelect = $("modelProvider");
+  if (!providerSelect.options.length) {
+    for (const provider of state.modelProviders) {
+      providerSelect.appendChild(optionElement(provider.key, provider.name));
+    }
+  }
+  const settings = state.modelSettings;
+  providerSelect.value = settings.provider || "aliyun";
+  $("modelName").value = settings.model || "";
+  $("modelBaseUrl").value = settings.base_url || "";
+  $("modelTimeout").value = settings.timeout_seconds || 45;
+  $("modelRetries").value = String(settings.max_retries ?? 2);
+  $("modelEnabled").checked = Boolean(settings.enabled);
+  $("modelLocalOnly").checked = Boolean(settings.local_only);
+  $("modelApiKey").value = "";
+  const keyText = settings.cloud
+    ? settings.api_key_configured
+      ? "API Key 已安全保存"
+      : "尚未保存 API Key"
+    : "本地模型不需要 API Key";
+  $("modelStatus").textContent =
+    `${settings.provider_name || "模型服务"} · ${settings.model || "未设置模型"} · ${keyText}` +
+    (settings.local_only ? " · 当前禁止连接云模型" : "");
+  $("aiClassifyBtn").disabled = !settings.enabled;
+  $("aiClassifyBtn").title = settings.enabled ? "" : "请先在下方启用并保存 AI 辅助设置。";
+}
+
+async function loadModelSettings() {
+  const response = await fetch("/api/models/settings");
+  const data = await response.json();
+  if (!response.ok) {
+    $("modelStatus").textContent = data.detail || "读取模型设置失败";
+    return;
+  }
+  renderModelSettings(data);
+}
+
+function selectedProviderSpec() {
+  return state.modelProviders.find((item) => item.key === $("modelProvider").value);
+}
+
+function applyProviderDefaults() {
+  const provider = selectedProviderSpec();
+  if (!provider) return;
+  $("modelBaseUrl").value = provider.default_base_url || "";
+  $("modelName").value = provider.default_model || "";
+  $("modelApiKey").placeholder = provider.cloud
+    ? "留空表示保持原有 Key"
+    : "本地模型不需要填写";
+}
+
+function modelSettingsPayload() {
+  return {
+    provider: $("modelProvider").value,
+    base_url: $("modelBaseUrl").value.trim(),
+    model: $("modelName").value.trim(),
+    api_key: $("modelApiKey").value.trim(),
+    enabled: $("modelEnabled").checked,
+    local_only: $("modelLocalOnly").checked,
+    timeout_seconds: Number($("modelTimeout").value || 45),
+    max_retries: Number($("modelRetries").value || 0),
+  };
+}
+
+async function saveModelSettings({ quiet = false } = {}) {
+  const response = await fetch("/api/models/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(modelSettingsPayload()),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    $("modelStatus").textContent = data.detail || "模型设置保存失败";
+    return false;
+  }
+  renderModelSettings(data);
+  if (!quiet) $("modelStatus").textContent += " · 设置已保存";
+  return true;
+}
+
+async function testModelConnection() {
+  $("modelStatus").textContent = "正在测试连接……";
+  if (!(await saveModelSettings({ quiet: true }))) return;
+  const response = await fetch("/api/models/test", { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) {
+    $("modelStatus").textContent = data.detail || "连接测试失败";
+    return;
+  }
+  const localHint = data.model_available === false ? "；服务已连接，但本机尚未安装所选模型" : "";
+  $("modelStatus").textContent =
+    `${data.provider_name} 连接成功，模型 ${data.model}，耗时 ${data.latency_ms} ms${localHint}`;
+}
+
+function applyClassificationDraft(draft) {
+  const block = state.options.blocks.find((item) => item.name === draft["板块"]);
+  const mainType = state.options.types.find((item) => item.name === draft["主类型"]);
+  if (block) $("blockCode").value = block.code;
+  if (mainType) $("typeCode").value = mainType.code;
+  $("questionType").value = draft["题型"] || "";
+  $("difficulty").value = draft["难度系数"] ?? "";
+  $("knowledgePoints").value = metadataLines(draft["知识点"]);
+  $("extraTypes").value = metadataLines(
+    (draft["类型"] || []).filter((item) => item !== draft["主类型"]),
+  );
+}
+
+async function classifyCurrentQuestion() {
+  const questionText = $("questionText").value.trim();
+  if (!questionText) {
+    alert("请先填写题目正文。");
+    return;
+  }
+  const settings = state.modelSettings || {};
+  let consent = true;
+  if (settings.cloud) {
+    consent = confirm(
+      "将把当前题目正文发送到所选云模型进行分类。不会发送答案、解析或整个题库。是否继续？",
+    );
+    if (!consent) return;
+  }
+  const resultBox = $("aiClassifyResult");
+  resultBox.classList.remove("hidden");
+  resultBox.textContent = "正在生成分类建议……";
+  $("aiClassifyBtn").disabled = true;
+  const response = await fetch("/api/ai/classify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_text: questionText, consent }),
+  });
+  const data = await response.json();
+  $("aiClassifyBtn").disabled = false;
+  if (!response.ok) {
+    resultBox.textContent = data.detail || "AI 分类失败；你仍可手动填写并入库。";
+    return;
+  }
+  applyClassificationDraft(data.draft || {});
+  const draft = data.draft || {};
+  const confidence = Math.round(Number(draft["置信度"] || 0) * 100);
+  const warnings = Array.isArray(draft["警告"]) && draft["警告"].length
+    ? `；需注意：${draft["警告"].join("、")}`
+    : "";
+  resultBox.textContent =
+    `建议已填入审核区（置信度 ${confidence}%）：${draft["理由"] || "请人工检查"}${warnings}。` +
+    "点击“确认入库”前仍可修改，AI 不会直接写入正式题库。";
+}
+
 function bindEvents() {
   $("draftBtn").addEventListener("click", generateDraft);
   $("convertWordBtn").addEventListener("click", convertWordToMarkdown);
@@ -866,10 +1018,15 @@ function bindEvents() {
   $("rebuildIndexBtn").addEventListener("click", rebuildIndex);
   $("restoreTemplatesBtn").addEventListener("click", restoreDefaultTemplates);
   $("backupBtn").addEventListener("click", createBackup);
+  $("modelProvider").addEventListener("change", applyProviderDefaults);
+  $("saveModelBtn").addEventListener("click", () => saveModelSettings());
+  $("testModelBtn").addEventListener("click", testModelConnection);
+  $("aiClassifyBtn").addEventListener("click", classifyCurrentQuestion);
 }
 
 loadOptions().then(() => {
   bindEvents();
   searchQuestions();
   refreshMaintenance();
+  loadModelSettings();
 });

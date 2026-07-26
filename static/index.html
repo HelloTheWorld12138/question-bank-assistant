@@ -124,6 +124,14 @@
             <div class="hint">确认后会用 LaTeX 替换对应公式图片。未确认的疑似公式会阻止入库。</div>
             <div id="formulaList"></div>
           </div>
+          <div class="ai-assist-box">
+            <div>
+              <div class="minor-title">AI 辅助分类（可选）</div>
+              <div class="hint">只发送当前题目正文，不发送答案、解析或整个题库；生成结果仍需老师确认。</div>
+            </div>
+            <button type="button" id="aiClassifyBtn" class="secondary">生成分类建议</button>
+          </div>
+          <div id="aiClassifyResult" class="result-box hidden"></div>
         </div>
       </section>
 
@@ -293,6 +301,63 @@
             <div id="backupList" class="maintenance-list"></div>
           </div>
         </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">
+          <div>
+            <span class="step-badge">6</span>
+            <span>AI 辅助设置（可选）</span>
+          </div>
+          <div class="action-group">
+            <button type="button" id="testModelBtn" class="secondary">测试连接</button>
+            <button type="button" id="saveModelBtn">保存设置</button>
+          </div>
+        </div>
+        <div class="notice">
+          题库的录入、搜索、组卷和导出不依赖 AI。国内网络建议使用阿里云百炼或 DeepSeek；
+          完全离线可选择本机 Ollama。
+        </div>
+        <div class="grid">
+          <label>
+            模型服务
+            <select id="modelProvider"></select>
+          </label>
+          <label>
+            模型名称
+            <input id="modelName" />
+          </label>
+          <label class="wide">
+            接口地址
+            <input id="modelBaseUrl" />
+          </label>
+          <label class="wide">
+            API Key（留空表示保持不变）
+            <input id="modelApiKey" type="password" autocomplete="new-password" placeholder="只保存在系统凭据管理器中" />
+          </label>
+          <label>
+            连接超时（秒）
+            <input id="modelTimeout" type="number" min="5" max="300" value="45" />
+          </label>
+          <label>
+            自动重试次数
+            <select id="modelRetries">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+          <label class="checkbox-line">
+            <input id="modelEnabled" type="checkbox" />
+            启用 AI 辅助
+          </label>
+          <label class="checkbox-line">
+            <input id="modelLocalOnly" type="checkbox" />
+            只使用本地功能，禁止连接云模型
+          </label>
+        </div>
+        <div id="modelStatus" class="result-box">正在读取模型设置……</div>
       </section>
     </main>
 

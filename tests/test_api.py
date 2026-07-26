@@ -1,6 +1,10 @@
+import json
+
+import httpx
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services import models
 
 
 def test_health_and_question_api(isolated_data):
@@ -83,3 +87,74 @@ def test_health_and_question_api(isolated_data):
 
         unsafe = client.get("/api/questions/../../secrets")
         assert unsafe.status_code in {400, 404}
+
+
+def test_model_settings_test_and_classification_api(isolated_data, monkeypatch):
+    secrets = {}
+
+    class MemorySecrets:
+        def get(self, provider):
+            return secrets.get(provider, "")
+
+        def set(self, provider, value):
+            secrets[provider] = value
+
+        def delete(self, provider):
+            secrets.pop(provider, None)
+
+    monkeypatch.setattr(models, "SECRET_STORE", MemorySecrets())
+    draft = {
+        "板块": "力学",
+        "主类型": "经典题",
+        "类型": ["经典题"],
+        "知识点": ["牛顿第二定律"],
+        "题型": "计算题",
+        "难度系数": 0.5,
+        "置信度": 0.88,
+        "理由": "考查动力学",
+        "警告": [],
+    }
+
+    def handler(request):
+        body = json.loads(request.content)
+        prompt = body["messages"][-1]["content"]
+        content = {"ok": True} if '{"ok": true}' in prompt else draft
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(content, ensure_ascii=False)}}]},
+        )
+
+    monkeypatch.setattr(models, "HTTP_TRANSPORT", httpx.MockTransport(handler))
+    with TestClient(app) as client:
+        saved = client.put(
+            "/api/models/settings",
+            json={
+                "provider": "aliyun",
+                "api_key": "sk-test",
+                "model": "qwen3.7-plus",
+                "enabled": True,
+                "max_retries": 0,
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json()["settings"]["api_key_configured"] is True
+        assert "api_key" not in saved.json()["settings"]
+
+        tested = client.post("/api/models/test")
+        assert tested.status_code == 200
+        assert tested.json()["ok"] is True
+
+        no_consent = client.post(
+            "/api/ai/classify",
+            json={"question_text": "测试题", "consent": False},
+        )
+        assert no_consent.status_code == 400
+        assert no_consent.json()["code"] == "consent_required"
+
+        classified = client.post(
+            "/api/ai/classify",
+            json={"question_text": "测试题", "consent": True},
+        )
+        assert classified.status_code == 200
+        assert classified.json()["draft"]["板块"] == "力学"
+        assert classified.json()["requires_confirmation"] is True

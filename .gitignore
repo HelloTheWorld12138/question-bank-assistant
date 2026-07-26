@@ -34,6 +34,8 @@ vault/题目/*.md
 !vault/题目/.gitkeep
 vault/backups/
 vault/templates/
+vault/settings.json
+vault/ai_drafts/
 vault/.trash/
 vault/.index.lock
 
