@@ -16,7 +16,7 @@ from app import config, storage
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, math_delimiter_issue
 from app.services import office
-from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc
+from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc, normalize_html_images
 
 
 RASTER_IMAGE_EXTENSIONS = {
@@ -228,6 +228,10 @@ async def create_question(
     storage.ensure_dirs()
     if question_type and question_type not in config.QUESTION_TYPES:
         raise AppError("未知题型")
+    question_text = normalize_html_images(question_text)
+    answer_text = normalize_html_images(answer_text)
+    analysis_text = normalize_html_images(analysis_text)
+    remarks = normalize_html_images(remarks)
     ensure_valid_math(question_text, answer_text, analysis_text, remarks)
     approved = normalize_approved_formula_images(approved_formula_images)
     if draft_id and re.fullmatch(r"[a-f0-9-]{36}", draft_id):
@@ -407,7 +411,7 @@ def update_question(question_id: str, payload: dict[str, Any]) -> dict[str, Any]
 
     for key in storage.SECTION_NAMES:
         if key in section_updates:
-            sections[key] = str(section_updates[key] or "")
+            sections[key] = normalize_html_images(str(section_updates[key] or ""))
     ensure_valid_math(*(sections.get(key, "") for key in storage.SECTION_NAMES))
 
     next_images = {Path(str(item)).name for item in metadata_updates.get("图片", previous_images) or []}

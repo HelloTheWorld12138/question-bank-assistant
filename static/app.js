@@ -1147,7 +1147,8 @@ function renderResults(items) {
     for (const [index, value] of values.entries()) {
       const cell = document.createElement("td");
       if (index === values.length - 1) {
-        appendFormattedText(cell, value);
+        cell.className = "result-preview";
+        renderRichPreview(value, cell, "暂无预览");
       } else {
         cell.textContent = value;
       }

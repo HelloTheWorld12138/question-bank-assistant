@@ -24,10 +24,42 @@ app_is_ready() {
     /usr/bin/grep --quiet '"app":"高中物理题库助手"'
 }
 
+running_revision() {
+  /usr/bin/curl --silent --fail --max-time 2 "$APP_URL/api/health" 2>/dev/null |
+    "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("source_revision", ""))' 2>/dev/null
+}
+
+current_revision() {
+  "$VENV_PYTHON" -c 'from app import config; print(config.SOURCE_REVISION)' 2>/dev/null
+}
+
+stop_running_app() {
+  local server_pid=""
+  if [[ -f "$PID_FILE" ]]; then
+    server_pid="$(/bin/cat "$PID_FILE" 2>/dev/null || true)"
+  fi
+  if [[ "$server_pid" != <-> ]]; then
+    server_pid="$(/usr/sbin/lsof -tiTCP:8000 -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1)"
+  fi
+  if [[ "$server_pid" == <-> ]] && kill -0 "$server_pid" 2>/dev/null; then
+    kill "$server_pid" 2>/dev/null || true
+    for attempt in {1..30}; do
+      kill -0 "$server_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+  fi
+}
+
 if app_is_ready; then
-  /usr/bin/open "$APP_URL"
-  /usr/bin/osascript -e 'display notification "题库已经在运行，已为你打开。" with title "高中物理题库助手"' >/dev/null 2>&1
-  exit 0
+  if [[ -x "$VENV_PYTHON" ]] &&
+    [[ "$(running_revision)" == "$(current_revision)" ]] &&
+    [[ -n "$(current_revision)" ]]; then
+    /usr/bin/open "$APP_URL"
+    /usr/bin/osascript -e 'display notification "题库已经在运行，已为你打开。" with title "高中物理题库助手"' >/dev/null 2>&1
+    exit 0
+  fi
+  echo "检测到程序已更新，正在重新加载……"
+  stop_running_app
 fi
 
 if [[ ! -x "$VENV_PYTHON" ]]; then

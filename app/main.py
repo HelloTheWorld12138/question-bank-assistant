@@ -14,6 +14,14 @@ configure_logging()
 storage.ensure_dirs()
 
 
+class FreshStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: dict):
+        response = await super().get_response(path, scope)
+        if path.endswith((".html", ".css", ".js", ".mjs")):
+            response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     storage.ensure_dirs()
@@ -33,4 +41,4 @@ app.mount(
     name="draft-assets",
 )
 app.mount("/assets", StaticFiles(directory=str(config.ASSETS_DIR)), name="assets")
-app.mount("/", StaticFiles(directory=str(config.STATIC_DIR), html=True), name="static")
+app.mount("/", FreshStaticFiles(directory=str(config.STATIC_DIR), html=True), name="static")

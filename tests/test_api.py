@@ -4,6 +4,7 @@ import httpx
 import pymupdf
 from fastapi.testclient import TestClient
 
+from app import config
 from app.main import app
 from app.services import models
 
@@ -13,6 +14,10 @@ def test_health_and_question_api(isolated_data):
         health = client.get("/api/health")
         assert health.status_code == 200
         assert health.json()["schema_version"] == 1
+        assert health.json()["source_revision"] == config.SOURCE_REVISION
+        app_script = client.get("/app.js")
+        assert app_script.status_code == 200
+        assert app_script.headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
 
         response = client.post(
             "/api/questions",

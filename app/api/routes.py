@@ -32,6 +32,7 @@ def health() -> dict[str, Any]:
         "app": config.APP_NAME,
         "version": config.APP_VERSION,
         "schema_version": config.SCHEMA_VERSION,
+        "source_revision": config.SOURCE_REVISION,
     }
 
 

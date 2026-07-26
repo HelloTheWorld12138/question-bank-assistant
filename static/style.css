@@ -794,6 +794,25 @@ button.compact {
   text-align: center;
 }
 
+.result-preview {
+  min-width: 260px;
+  max-width: 520px;
+  color: #30445b;
+  line-height: 1.55;
+}
+
+.result-preview .preview-figure {
+  margin: 7px 0;
+  text-align: left;
+}
+
+.result-preview .preview-figure img {
+  width: auto !important;
+  max-width: 220px !important;
+  max-height: 82px;
+  object-fit: contain;
+}
+
 .formula-rendered.is-empty {
   display: grid;
   place-items: center;

@@ -1,10 +1,11 @@
 import os
 import platform
+import hashlib
 from pathlib import Path
 
 
 APP_NAME = "高中物理题库助手"
-APP_VERSION = "0.6.0-dev"
+APP_VERSION = "0.6.1-dev"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,23 @@ LOCAL_PANDOC = ROOT / "tools" / "pandoc" / "pandoc.exe"
 BUNDLED_TEMPLATES_DIR = ROOT / "templates"
 OFFICECLI_VERSION = "1.0.142"
 OFFICECLI_DIR = ROOT / "tools" / "officecli"
+
+
+def calculate_source_revision() -> str:
+    """Identify the app/static source loaded by the current server process."""
+    digest = hashlib.sha256()
+    for directory in (ROOT / "app", STATIC_DIR):
+        if not directory.is_dir():
+            continue
+        for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+            if path.suffix.lower() not in {".py", ".html", ".css", ".js", ".mjs"}:
+                continue
+            digest.update(path.relative_to(ROOT).as_posix().encode("utf-8"))
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+SOURCE_REVISION = calculate_source_revision()
 
 
 def bundled_officecli_name() -> str:

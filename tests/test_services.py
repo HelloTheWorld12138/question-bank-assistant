@@ -156,6 +156,33 @@ def test_uploaded_image_token_is_placed_and_normalized_to_png(isolated_data):
     assert (config.ASSETS_DIR / "LXJC0001_01.png").read_bytes().startswith(b"\x89PNG")
 
 
+def test_raw_word_html_image_is_materialized_from_draft(isolated_data):
+    draft_id = "88825861-b762-4c69-aa6b-d1f536a9f879"
+    draft_dir = config.DRAFT_ASSETS_DIR / draft_id / "media"
+    draft_dir.mkdir(parents=True)
+    source = draft_dir / "diagram.png"
+    Image.new("RGB", (640, 300), "#eef3f7").save(source)
+    raw_html = (
+        f'<img src="/draft-assets/{draft_id}/media/diagram.png" '
+        'style="width:5.5in;height:1.5in" alt="@@@WORD-DRAWING" />'
+    )
+
+    created = asyncio.run(
+        questions.create_question(
+            block_code="LX",
+            type_code="JC",
+            question_text=f"如图所示。\n\n{raw_html}",
+            draft_id=draft_id,
+        )
+    )
+
+    metadata, sections = storage.read_question(created["id"])
+    assert metadata["图片"] == ["LXJC0001_01.png"]
+    assert '<img src=' not in sections["题目"]
+    assert "![题图](../assets/LXJC0001_01.png){width=5.5in height=1.5in}" in sections["题目"]
+    assert (config.ASSETS_DIR / "LXJC0001_01.png").is_file()
+
+
 def test_unbalanced_formula_is_rejected_before_saving(isolated_data):
     with pytest.raises(AppError, match="公式格式需要检查"):
         asyncio.run(
