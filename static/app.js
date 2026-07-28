@@ -126,6 +126,45 @@ function isStandaloneContentBlock(line) {
   );
 }
 
+function optionOrder(label) {
+  const fullwidth = "ＡＢＣＤＥＦＧＨ";
+  const fullwidthIndex = fullwidth.indexOf(label);
+  if (fullwidthIndex >= 0) return fullwidthIndex;
+  return String(label || "").toUpperCase().charCodeAt(0) - "A".charCodeAt(0);
+}
+
+function splitInlineOptions(line) {
+  const source = String(line || "");
+  const markerPattern =
+    /(^|(?:\t+|[ \u00a0]+))([A-HＡ-Ｈ])([．.、:：)）]|\s+)/g;
+  const matches = [...source.matchAll(markerPattern)];
+  if (matches.length < 2) return [source];
+
+  const orders = matches.map((match) => optionOrder(match[2]));
+  const consecutive =
+    orders[0] === 0 &&
+    orders.slice(1).every((order, index) => order === orders[index] + 1);
+  if (!consecutive) return [source];
+  const hasClearSeparator = matches
+    .slice(1)
+    .some((match) => match[1].includes("\t") || match[1].length >= 2);
+  if (!hasClearSeparator) {
+    const hasExplicitMarkers = matches.every((match) => match[3].trim());
+    if (matches.length < 3 || !hasExplicitMarkers) return [source];
+  }
+
+  const result = [];
+  const leadingText = source.slice(0, matches[0].index).trim();
+  if (leadingText) result.push(leadingText);
+  matches.forEach((match, index) => {
+    const start = match.index + match[1].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index : source.length;
+    const option = source.slice(start, end).trim();
+    if (option) result.push(option);
+  });
+  return result;
+}
+
 function normalizeLineBreaks(value) {
   const source = String(value || "").replace(/\r\n?/g, "\n");
   const prepared = [];
@@ -154,7 +193,9 @@ function normalizeLineBreaks(value) {
       /^([ \t]*)>\s*([A-HＡ-Ｈ](?:[．.、:：)）]|\s+).*)$/,
       "$1$2",
     );
-    prepared.push({ line, protected: false });
+    splitInlineOptions(line).forEach((optionLine) => {
+      prepared.push({ line: optionLine, protected: false });
+    });
   });
 
   const result = [];

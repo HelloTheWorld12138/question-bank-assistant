@@ -14,6 +14,11 @@ QUOTE_SPACER_RE = re.compile(r"^[ \t]*>[ \t]*$")
 STANDALONE_BLOCK_RE = re.compile(
     r"^\s*(?:!\[[^\]]*\]\([^)]+\)(?:\{[^}\n]*\})?|\$\$|\\\[|\\\])\s*$"
 )
+INLINE_OPTION_MARKER_RE = re.compile(
+    r"(?P<prefix>^|(?:\t+|[ \u00a0]+))"
+    r"(?P<label>[A-HＡ-Ｈ])"
+    r"(?P<suffix>[．.、:：)）]|\s+)"
+)
 
 
 def _is_option_line(line: str) -> bool:
@@ -22,6 +27,55 @@ def _is_option_line(line: str) -> bool:
 
 def _keep_blank_before_option(previous_line: str) -> bool:
     return bool(STANDALONE_BLOCK_RE.match(previous_line))
+
+
+def _option_order(label: str) -> int:
+    fullwidth = "ＡＢＣＤＥＦＧＨ"
+    if label in fullwidth:
+        return fullwidth.index(label)
+    return ord(label.upper()) - ord("A")
+
+
+def _split_inline_options(line: str) -> list[str]:
+    """Split a tabular A/B/C/D row without touching ordinary prose.
+
+    Word commonly stores several choices in one paragraph separated by tabs.
+    Pandoc may preserve those tabs or turn them into spaces. Requiring an
+    A-first consecutive sequence prevents phrases such as “A、B 两点” from
+    being treated as an option row.
+    """
+    matches = list(INLINE_OPTION_MARKER_RE.finditer(line))
+    if len(matches) < 2:
+        return [line]
+
+    orders = [_option_order(match.group("label")) for match in matches]
+    if orders[0] != 0 or any(
+        current != previous + 1 for previous, current in zip(orders, orders[1:])
+    ):
+        return [line]
+    has_clear_separator = any(
+        "\t" in match.group("prefix") or len(match.group("prefix")) >= 2
+        for match in matches[1:]
+    )
+    if not has_clear_separator:
+        has_explicit_markers = all(
+            not match.group("suffix").isspace() for match in matches
+        )
+        if len(matches) < 3 or not has_explicit_markers:
+            return [line]
+
+    result: list[str] = []
+    leading_text = line[: matches[0].start()].strip()
+    if leading_text:
+        result.append(leading_text)
+
+    for index, match in enumerate(matches):
+        start = match.start("label")
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+        option = line[start:end].strip()
+        if option:
+            result.append(option)
+    return result
 
 
 def normalize_line_breaks(value: str | None) -> str:
@@ -61,7 +115,7 @@ def normalize_line_breaks(value: str | None) -> str:
         option = QUOTED_OPTION_RE.match(line)
         if option:
             line = f"{option.group('indent')}{option.group('option')}".rstrip()
-        prepared.append((line, False))
+        prepared.extend((option_line, False) for option_line in _split_inline_options(line))
 
     result: list[str] = []
     for index, (line, protected) in enumerate(prepared):
