@@ -12,6 +12,7 @@ cd "$ROOT"
 python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip
 "$VENV/bin/python" -m pip install -r requirements-build.txt
+APP_VERSION="$("$VENV/bin/python" -c 'from app.config import APP_VERSION; print(APP_VERSION)')"
 
 rm -rf "$BUILD" "$DIST/$APP_NAME.app" "$DIST/$APP_NAME.dmg"
 "$VENV/bin/python" -m PyInstaller --noconfirm --clean --windowed --onedir \
@@ -30,8 +31,14 @@ rm -rf "$BUILD" "$DIST/$APP_NAME.app" "$DIST/$APP_NAME.dmg"
   --hidden-import "uvicorn.protocols.http.auto" \
   desktop.py
 
+APP_BUNDLE="$DIST/$APP_NAME.app"
+PLIST="$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $APP_VERSION" "$PLIST"
+codesign --force --deep --sign - "$APP_BUNDLE"
+
 mkdir -p "$DMG_STAGE"
-ditto "$DIST/$APP_NAME.app" "$DMG_STAGE/$APP_NAME.app"
+ditto "$APP_BUNDLE" "$DMG_STAGE/$APP_NAME.app"
 ln -s /Applications "$DMG_STAGE/Applications"
 
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" \

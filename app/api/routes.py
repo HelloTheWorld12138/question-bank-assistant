@@ -40,7 +40,7 @@ def health() -> dict[str, Any]:
 def options() -> dict[str, Any]:
     storage.ensure_dirs()
     return {
-        "blocks": [{"code": code, "name": name} for code, name in config.BLOCKS.items()],
+        "blocks": [{"code": code, "name": name} for code, name in config.BLOCK_OPTIONS.items()],
         "types": [{"code": code, "name": name} for code, name in config.TYPES.items()],
         "question_types": list(config.QUESTION_TYPES),
         "knowledge_points": knowledge.knowledge_by_block(),

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>题搭子</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.7.0" />
+    <link rel="stylesheet" href="./style.css?v=1.0.0" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -23,11 +23,31 @@
         <div class="brand-mark"><img src="./brand/tidazi-logo.png" alt="题搭子" /></div>
         <div>
           <h1>题搭子</h1>
+          <p>高中物理题库工作台</p>
         </div>
+      </div>
+      <nav class="header-workspace-nav subtask-nav" aria-label="当前板块功能">
+        <div class="subtask-menu is-active" data-module-menu="entry">
+          <button type="button" class="subtask-nav-item is-active" data-workspace-target="import">批量导入</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="manual">录入单题</button>
+        </div>
+        <div class="subtask-menu" data-module-menu="library">
+          <button type="button" class="subtask-nav-item" data-workspace-target="library">浏览与修改</button>
+        </div>
+        <div class="subtask-menu" data-module-menu="export">
+          <button type="button" class="subtask-nav-item" data-workspace-target="select">选择题目</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="export">组卷并导出</button>
+        </div>
+      </nav>
+      <div class="header-actions">
+        <span class="local-assurance"><i></i> 题库已就绪</span>
+        <button type="button" class="header-settings" data-workspace-target="settings">设置</button>
       </div>
     </header>
 
+    <div class="app-shell">
     <div class="navigation-shell">
+      <div class="sidebar-section-label">主要板块</div>
       <nav class="module-nav" aria-label="主要板块">
         <button type="button" class="module-nav-item is-active" data-module-target="entry">
           <span class="module-number">1</span>
@@ -42,20 +62,20 @@
           <span><strong>导出题目</strong><small>生成 Word</small></span>
         </button>
       </nav>
-      <nav class="subtask-nav" aria-label="当前板块功能">
-        <div class="subtask-menu is-active" data-module-menu="entry">
-          <button type="button" class="subtask-nav-item is-active" data-workspace-target="import">批量导入</button>
-          <button type="button" class="subtask-nav-item" data-workspace-target="manual">录入单题</button>
+      <section class="taxonomy-browser" aria-label="题库分类">
+        <div class="sidebar-section-label">题库分类</div>
+        <div class="taxonomy-tabs" role="tablist" aria-label="题库分类方式">
+          <button type="button" class="taxonomy-tab is-active" data-taxonomy-mode="block">知识板块</button>
+          <button type="button" class="taxonomy-tab" data-taxonomy-mode="type">题型</button>
         </div>
-        <div class="subtask-menu" data-module-menu="library">
-          <button type="button" class="subtask-nav-item" data-workspace-target="library">浏览与修改</button>
-          <button type="button" class="subtask-nav-item" data-workspace-target="settings">系统设置</button>
+        <div id="taxonomyList" class="taxonomy-list">
+          <span class="taxonomy-loading">正在读取分类…</span>
         </div>
-        <div class="subtask-menu" data-module-menu="export">
-          <button type="button" class="subtask-nav-item" data-workspace-target="select">选择题目</button>
-          <button type="button" class="subtask-nav-item" data-workspace-target="export">组卷并导出</button>
-        </div>
-      </nav>
+      </section>
+      <div class="sidebar-footer">
+        <div><i></i><strong>题库状态正常</strong></div>
+        <span id="sidebarVersion">题搭子</span>
+      </div>
     </div>
 
     <main class="layout">
@@ -211,8 +231,14 @@
 
       <section class="panel workspace-view" data-workspace-view="library">
         <div class="section-title">
-          <h2>浏览与修改</h2>
-          <button type="button" id="librarySearchBtn">查找</button>
+          <div>
+            <div>
+              <span class="section-kicker">QUESTION BANK</span>
+              <h2>浏览与修改</h2>
+            </div>
+            <span class="section-description">按板块、题型或关键词快速定位题目</span>
+          </div>
+          <button type="button" id="librarySearchBtn">查找题目</button>
         </div>
         <div class="library-search-row">
           <input id="libraryQuery" aria-label="题库关键词" placeholder="输入题号、题目内容或知识点" />
@@ -486,6 +512,7 @@
         <div id="modelStatus" class="result-box">正在读取模型设置……</div>
       </section>
     </main>
+    </div>
 
     <dialog id="editDialog" class="edit-dialog">
       <form id="editForm">
@@ -633,6 +660,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.9"></script>
+    <script src="./app.js?v=1.0.0"></script>
   </body>
 </html>

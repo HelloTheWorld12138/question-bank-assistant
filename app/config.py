@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "题搭子"
-APP_VERSION = "0.7.0"
+APP_VERSION = "1.0.0"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,14 +77,32 @@ def exam_template_path(template_key: str) -> Path:
 
 BLOCKS = {
     "LX": "力学",
-    "DX": "电学",
-    "CD": "磁场与电磁感应",
-    "GX": "光学",
+    "DX": "电磁学",
     "RX": "热学",
+    "GX": "光学",
     "XD": "近代物理",
-    "SY": "实验",
-    "ZH": "综合",
+    "SY": "物理实验",
+    "ZH": "物理学史、方法、单位制、常识",
+    # CD 仅用于兼容旧题号；新题统一归入 DX（电磁学）。
+    "CD": "电磁学",
 }
+
+BLOCK_OPTIONS = {
+    code: BLOCKS[code]
+    for code in ("LX", "DX", "RX", "GX", "XD", "SY", "ZH")
+}
+
+BLOCK_NAME_ALIASES = {
+    "电学": "电磁学",
+    "磁场与电磁感应": "电磁学",
+    "实验": "物理实验",
+    "综合": "物理学史、方法、单位制、常识",
+}
+
+
+def canonical_block_name(value: str) -> str:
+    name = str(value or "").strip()
+    return BLOCK_NAME_ALIASES.get(name, name)
 
 TYPES = {
     "JD": "经典题",

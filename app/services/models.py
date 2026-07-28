@@ -70,7 +70,7 @@ CLASSIFICATION_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
     "required": ["板块", "主类型", "类型", "知识点", "题型", "难度系数", "置信度", "理由", "警告"],
     "properties": {
-        "板块": {"type": "string", "enum": list(config.BLOCKS.values())},
+        "板块": {"type": "string", "enum": list(config.BLOCK_OPTIONS.values())},
         "主类型": {"type": "string", "enum": list(config.TYPES.values())},
         "类型": {
             "type": "array",
@@ -449,7 +449,7 @@ def _classification_prompt(question_text: str) -> tuple[str, str]:
     system_prompt = (
         "你是高中物理题库整理助手。只做分类和元数据提取，不解题、不生成答案。"
         "必须输出一个严格 JSON 对象，不得增加 Markdown 或解释。"
-        f"板块只能选：{'、'.join(config.BLOCKS.values())}。"
+        f"板块只能选：{'、'.join(config.BLOCK_OPTIONS.values())}。"
         f"主类型和类型只能选：{'、'.join(config.TYPES.values())}。"
         f"题型只能选：{'、'.join(config.QUESTION_TYPES)}。"
         f"知识点只能从以下标准字典中选择：{'、'.join(knowledge.all_knowledge_points())}。"
@@ -464,6 +464,8 @@ def _classification_prompt(question_text: str) -> tuple[str, str]:
 
 
 def _validate_classification(result: dict[str, Any]) -> dict[str, Any]:
+    if "板块" in result:
+        result["板块"] = config.canonical_block_name(result["板块"])
     if isinstance(result.get("难度系数"), str):
         try:
             result["难度系数"] = float(result["难度系数"])

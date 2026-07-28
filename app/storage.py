@@ -153,6 +153,8 @@ def split_markdown_sections(text: str) -> tuple[dict[str, Any], dict[str, str]]:
 def normalize_metadata(metadata: dict[str, Any], *, for_write: bool = False) -> dict[str, Any]:
     normalized = dict(metadata)
     normalized.setdefault("schema_version", config.SCHEMA_VERSION)
+    if "板块" in normalized:
+        normalized["板块"] = config.canonical_block_name(normalized["板块"])
     if "难度系数" not in normalized and "难度" in normalized:
         normalized["难度系数"] = normalized.pop("难度")
     if for_write:
