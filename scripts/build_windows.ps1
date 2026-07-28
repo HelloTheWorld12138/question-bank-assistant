@@ -6,8 +6,11 @@ $Python = Join-Path $Venv "Scripts\python.exe"
 $Dist = Join-Path $Root "dist"
 $Build = Join-Path $Root "build\windows"
 $AppName = "题搭子"
+$InstallerScript = Join-Path $Root "scripts\windows-installer.iss"
 
 Set-Location $Root
+& (Join-Path $Root "scripts\download_pandoc.ps1")
+& (Join-Path $Root "scripts\download_officecli.ps1")
 py -3.10 -m venv $Venv
 & $Python -m pip install --upgrade pip
 & $Python -m pip install -r (Join-Path $Root "requirements-build.txt")
@@ -22,6 +25,8 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Build $App
   --add-data "$(Join-Path $Root 'static');static" `
   --add-data "$(Join-Path $Root 'data');data" `
   --add-data "$(Join-Path $Root 'templates');templates" `
+  --add-data "$(Join-Path $Root 'tools');tools" `
+  --add-data "$(Join-Path $Root 'third_party\OfficeCLI');licenses/OfficeCLI" `
   --collect-all webview `
   --hidden-import app.main `
   --hidden-import uvicorn.logging `
@@ -29,5 +34,19 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Build $App
   --hidden-import uvicorn.protocols.http.auto `
   desktop.py
 
-Compress-Archive -Path (Join-Path $Dist $AppName) -DestinationPath (Join-Path $Dist "$AppName-Windows.zip") -Force
-Write-Host "Created: $Dist\$AppName-Windows.zip" -ForegroundColor Green
+$AppVersion = & $Python -c "from app.config import APP_VERSION; print(APP_VERSION)"
+$IsccCandidates = @(
+    (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+) | Where-Object { $_ -and (Test-Path $_) }
+if (-not $IsccCandidates) {
+    throw "未找到 Inno Setup 6。请安装后重新运行：https://jrsoftware.org/isdl.php"
+}
+$Iscc = $IsccCandidates | Select-Object -First 1
+& $Iscc "/DMyAppVersion=$AppVersion" $InstallerScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup 未能生成安装包。"
+}
+
+Write-Host "Created: $Dist\$AppName-Setup-$AppVersion.exe" -ForegroundColor Green

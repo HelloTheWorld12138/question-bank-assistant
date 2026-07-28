@@ -14,7 +14,7 @@ if (Test-Path $Destination) {
     $ExistingHash = (Get-FileHash -Algorithm SHA256 $Destination).Hash.ToLowerInvariant()
     if ($ExistingHash -eq $ExpectedSha256) {
         Write-Host "OfficeCLI $Version is already ready."
-        exit 0
+        return
     }
 }
 
