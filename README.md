@@ -1,39 +1,78 @@
-# 题搭子
+<p align="center">
+  <img src="./static/brand/tidazi-logo.png" width="96" alt="题搭子 Logo">
+</p>
 
-题搭子是一款面向高中物理教师的本地题库与组卷工具。题目、图片和导出文件默认保存在本机，不需要将题库上传到云端。
+<h1 align="center">题搭子</h1>
 
-![题搭子 Logo](./static/brand/tidazi-logo.png)
+<p align="center">面向高中物理教师的本地题库与组卷工具。</p>
 
-当前稳定版本：**1.0.0**
+<p align="center">无需注册，题目、图片、设置和导出文件默认保存在本机。</p>
 
-## 能做什么
+<p align="center">
+  <a href="https://github.com/HelloTheWorld12138/question-bank-assistant/releases/latest">下载最新版</a> ·
+  <a href="./CHANGELOG.md">更新记录</a> ·
+  <a href="https://github.com/HelloTheWorld12138/question-bank-assistant/issues">反馈问题</a>
+</p>
 
-- 导入 Word、PDF、图片中的题目，批量整理后审核入库
-- 手动录入题目，并即时预览文字、图片和公式
-- 按知识板块或题型浏览题库，并按难度、年份和来源筛选
-- 选择题目并生成题目卷、答案卷和解析卷
-- 导出 A4 单栏、A4 双栏或正式考试卷 Word 文档
-- 可选使用本地或云端模型辅助分类、找题与组卷
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/HelloTheWorld12138/question-bank-assistant?label=稳定版" alt="GitHub Release">
+  <img src="https://github.com/HelloTheWorld12138/question-bank-assistant/actions/workflows/tests.yml/badge.svg" alt="Tests">
+</p>
 
-## 下载与使用
+![题搭子题库工作台](./docs/assets/app-overview.jpg)
 
-### macOS
+## 下载
 
-从 [Releases](../../releases/latest) 下载名称包含 `macOS` 的 `.dmg` 文件，拖入“应用程序”后打开。
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| macOS | `Tidazi-*-macOS-arm64.dmg` | 适用于 Apple 芯片 Mac |
+| Windows | `Tidazi-*-Windows-x64.zip` | 适用于 64 位 Windows，解压后运行 `题搭子.exe` |
 
-当前安装包适用于 Apple 芯片 Mac。应用尚未经过 Apple 公证；如果 macOS 首次打开时提示无法验证开发者，请在“系统设置 → 隐私与安全性”中确认打开。
+安装包与 `SHA256SUMS.txt` 均在 [Releases](https://github.com/HelloTheWorld12138/question-bank-assistant/releases/latest) 提供。
 
-### Windows
+macOS 安装包目前未经过 Apple 公证。如果首次打开时提示无法验证开发者，请在
+“系统设置 → 隐私与安全性”中确认打开。
 
-从 [Releases](../../releases/latest) 下载名称包含 `Windows` 的 `.zip` 文件，解压后运行 `题搭子.exe`。
+## 核心能力
 
-Windows 构建产物为便携版，无需安装 Python。
+- 从 Word、PDF 和图片批量整理题目，审核后再写入正式题库
+- 手动录入题干、答案、解析、公式和图片，并即时预览
+- 按知识板块或题型浏览题库，支持难度、年份和来源筛选
+- 覆盖力学、电磁学、热学、光学、近代物理、物理实验等高中物理板块
+- 勾选题目生成题目卷、答案卷或解析卷
+- 导出 A4 单栏、A4 双栏和正式考试卷 Word 文档
+- 可选接入阿里云百炼、DeepSeek、OpenAI 兼容接口或本地 Ollama
 
-发布页同时提供 `SHA256SUMS.txt`，可用于校验下载文件的完整性。
+## 工作方式
+
+```text
+导入或录题 → 人工审核 → 题库检索 → 勾选组卷 → 导出 Word
+```
+
+题库使用 Markdown 保存，每道题都是独立文件；图片单独存放，索引可以重新生成。
+删除的题目会先进入本地回收站，应用也会定期创建本地备份。
+
+## 数据与隐私
+
+- 默认不需要账号，也不会把整个题库上传到服务器
+- 模型功能默认关闭，不影响录题、检索、组卷和备份
+- API Key 写入操作系统凭据存储，不写进题库文件
+- 使用云端模型前，界面会提示将要发送的内容
+- 运行时题库、图片、日志、设置和导出文件均被 Git 忽略
+
+## 使用说明
+
+- Word 导入与导出依赖 [Pandoc](https://pandoc.org/installing.html)。未检测到 Pandoc 时，其他题库功能仍可使用。
+- 数字版 PDF 可以直接提取文字；扫描件和照片在未配置离线 OCR 时会保留原图，等待人工录入。
+- AI 分类与组卷建议属于可选增强，模型名称和服务地址均可在“设置”中修改。
 
 ## 本地开发
 
+需要 Python 3.10 或更高版本。
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -46,37 +85,36 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 python -m pytest
 ```
 
-## 打包
-
-macOS：
+构建桌面包：
 
 ```bash
+# macOS
 bash scripts/build_macos_dmg.sh
-```
 
-Windows：
-
-```powershell
+# Windows PowerShell
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
 
-Windows 需要 Python 3.10；仓库中的 GitHub Actions 也可直接生成 Windows 包。
-
-## 版本记录
-
-完整变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
+更完整的环境变量、可选工具和发布说明见
+[开发说明](./docs/开发说明.md)。
 
 ## 项目结构
 
 ```text
-app/        后端与题库服务
-static/     网页界面与本地公式渲染资源
-templates/  Word 试卷模板
-assets/     应用 Logo 与平台图标
-scripts/    macOS / Windows 打包脚本
-tests/      自动化测试
+app/          API、题库服务与桌面后端
+static/       网页界面和本地公式渲染资源
+data/         知识点分类
+templates/    Word 试卷模板
+scripts/      桌面打包与模板生成脚本
+tests/        自动化测试
+docs/         开发说明与题库数据规范
 ```
 
-## 数据与隐私
+题库文件格式见 [题库数据格式规范](./docs/数据格式规范.md)。
 
-运行后的题库数据不纳入仓库：题目、图片、导出文件、日志和本地设置均被忽略。使用云端模型前，请自行确认发送范围与服务商隐私政策。
+## 项目状态
+
+当前稳定版为 **1.0.0**。功能建议和问题请提交到
+[GitHub Issues](https://github.com/HelloTheWorld12138/question-bank-assistant/issues)。
+
+本仓库目前未附加开源许可证；源码与发行包的再分发需获得项目作者许可。
