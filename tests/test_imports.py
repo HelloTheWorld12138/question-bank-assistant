@@ -1,4 +1,5 @@
 import asyncio
+import json
 from io import BytesIO
 
 import pymupdf
@@ -138,6 +139,34 @@ def test_commit_confirmed_import_drafts(isolated_data):
     assert metadata["题型"] == "选择题"
     assert sections["答案"] == "A"
     assert imports.load_import_task(task["id"])["status"] == "部分入库"
+
+
+def test_existing_import_draft_normalizes_two_column_options_when_loaded(isolated_data):
+    task_id = "2f840a82-3e5c-43a5-a7a7-43161eb95c09"
+    task = {
+        "id": task_id,
+        "status": "待审核",
+        "drafts": [
+            {
+                "id": "draft-1",
+                "question": "A. 选项一 B. 选项二\nC. 选项三 D. 选项四",
+                "answer": "",
+                "analysis": "",
+                "remarks": "",
+            }
+        ],
+    }
+    storage.ensure_dirs()
+    storage.atomic_write_text(
+        imports.task_path(task_id),
+        json.dumps(task, ensure_ascii=False, indent=2) + "\n",
+    )
+
+    loaded = imports.load_import_task(task_id)
+
+    assert loaded["drafts"][0]["question"] == (
+        "A. 选项一\nB. 选项二\nC. 选项三\nD. 选项四"
+    )
 
 
 def test_split_and_merge_import_drafts(isolated_data):

@@ -16,6 +16,7 @@ from fastapi import UploadFile
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from app import config, storage
+from app.content import normalize_line_breaks
 from app.errors import AppError, NotFoundError
 from app.math_ocr import detect_formula_items
 from app.services import documents, questions
@@ -585,7 +586,18 @@ def task_path(task_id: str) -> Path:
     return config.IMPORT_TASKS_DIR / f"{normalized}.json"
 
 
+def normalize_import_task_content(task: dict[str, Any]) -> dict[str, Any]:
+    for draft in task.get("drafts", []):
+        if not isinstance(draft, dict):
+            continue
+        for field in ("question", "answer", "analysis", "remarks"):
+            if field in draft:
+                draft[field] = normalize_line_breaks(str(draft.get(field) or ""))
+    return task
+
+
 def save_import_task(task: dict[str, Any]) -> None:
+    normalize_import_task_content(task)
     path = task_path(task["id"])
     storage.atomic_write_text(path, json.dumps(task, ensure_ascii=False, indent=2) + "\n")
 
@@ -600,7 +612,7 @@ def load_import_task(task_id: str) -> dict[str, Any]:
         raise AppError("导入任务文件已损坏。") from exc
     if not isinstance(loaded, dict):
         raise AppError("导入任务格式不正确。")
-    return loaded
+    return normalize_import_task_content(loaded)
 
 
 def list_import_tasks(limit: int = 20) -> list[dict[str, Any]]:

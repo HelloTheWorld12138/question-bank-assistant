@@ -80,6 +80,38 @@ def test_word_tabs_rewritten_as_single_spaces_still_split_full_option_row():
     )
 
 
+def test_two_column_options_across_neighboring_rows_are_split():
+    source = (
+        "下列说法正确的是（　　）\n\n"
+        "A. 表面的重力加速度 B. 第一宇宙速度\n"
+        "C. 密度 D. 质量"
+    )
+
+    assert normalize_line_breaks(source) == (
+        "下列说法正确的是（　　）\n"
+        "A. 表面的重力加速度\n"
+        "B. 第一宇宙速度\n"
+        "C. 密度\n"
+        "D. 质量"
+    )
+
+
+def test_two_column_options_allow_one_technical_blank_between_rows():
+    source = "A．选项一 B．选项二\n\nC．选项三 D．选项四"
+
+    assert normalize_line_breaks(source) == (
+        "A．选项一\nB．选项二\nC．选项三\nD．选项四"
+    )
+
+
+def test_quoted_two_column_options_from_word_are_split():
+    source = "> A．选项一 B．选项二\n>\n> C．选项三 D．选项四"
+
+    assert normalize_line_breaks(source) == (
+        "A．选项一\nB．选项二\nC．选项三\nD．选项四"
+    )
+
+
 def test_fullwidth_tab_separated_options_are_split():
     source = "Ａ．甲\tＢ．乙\tＣ．丙\tＤ．丁"
 

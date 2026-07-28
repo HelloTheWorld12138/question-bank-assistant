@@ -133,22 +133,67 @@ function optionOrder(label) {
   return String(label || "").toUpperCase().charCodeAt(0) - "A".charCodeAt(0);
 }
 
-function splitInlineOptions(line) {
+function inlineOptionMatches(line) {
   const source = String(line || "");
   const markerPattern =
     /(^|(?:\t+|[ \u00a0]+))([A-HＡ-Ｈ])([．.、:：)）]|\s+)/g;
-  const matches = [...source.matchAll(markerPattern)];
+  return [...source.matchAll(markerPattern)];
+}
+
+function consecutiveOptionOrders(matches) {
+  const orders = matches.map((match) => optionOrder(match[2]));
+  const consecutive = orders
+    .slice(1)
+    .every((order, index) => order === orders[index] + 1);
+  return consecutive ? orders : [];
+}
+
+function groupedOptionRowOrders(line) {
+  const source = String(line || "");
+  const matches = inlineOptionMatches(source);
+  if (matches.length < 2 || source.slice(0, matches[0].index).trim()) return [];
+  if (matches.some((match) => !match[3].trim())) return [];
+  return consecutiveOptionOrders(matches);
+}
+
+function groupedOptionRowIndexes(prepared) {
+  const contentIndexes = prepared
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !item.protected && item.line.trim())
+    .map(({ index }) => index);
+  const grouped = new Set();
+  contentIndexes.slice(0, -1).forEach((leftIndex, position) => {
+    const rightIndex = contentIndexes[position + 1];
+    if (rightIndex - leftIndex > 2) return;
+    if (prepared.slice(leftIndex + 1, rightIndex).some((item) => item.protected)) return;
+    const leftOrders = groupedOptionRowOrders(prepared[leftIndex].line);
+    const rightOrders = groupedOptionRowOrders(prepared[rightIndex].line);
+    const combined = [...leftOrders, ...rightOrders];
+    const completeSequence =
+      leftOrders.length &&
+      rightOrders.length &&
+      combined.length >= 4 &&
+      combined.every((order, index) => order === index);
+    if (completeSequence) {
+      grouped.add(leftIndex);
+      grouped.add(rightIndex);
+    }
+  });
+  return grouped;
+}
+
+function splitInlineOptions(line, groupedRow = false) {
+  const source = String(line || "");
+  const matches = inlineOptionMatches(source);
   if (matches.length < 2) return [source];
 
-  const orders = matches.map((match) => optionOrder(match[2]));
-  const consecutive =
-    orders[0] === 0 &&
-    orders.slice(1).every((order, index) => order === orders[index] + 1);
-  if (!consecutive) return [source];
+  const orders = consecutiveOptionOrders(matches);
+  if (!orders.length || (orders[0] !== 0 && !groupedRow)) return [source];
+  if (groupedRow && matches.some((match) => !match[3].trim())) return [source];
   const hasClearSeparator = matches
     .slice(1)
     .some((match) => match[1].includes("\t") || match[1].length >= 2);
-  if (!hasClearSeparator) {
+  if (!groupedRow && !hasClearSeparator) {
     const hasExplicitMarkers = matches.every((match) => match[3].trim());
     if (matches.length < 3 || !hasExplicitMarkers) return [source];
   }
@@ -193,18 +238,28 @@ function normalizeLineBreaks(value) {
       /^([ \t]*)>\s*([A-HＡ-Ｈ](?:[．.、:：)）]|\s+).*)$/,
       "$1$2",
     );
-    splitInlineOptions(line).forEach((optionLine) => {
-      prepared.push({ line: optionLine, protected: false });
+    prepared.push({ line, protected: false });
+  });
+
+  const groupedRows = groupedOptionRowIndexes(prepared);
+  const expanded = [];
+  prepared.forEach((item, index) => {
+    if (item.protected) {
+      expanded.push(item);
+      return;
+    }
+    splitInlineOptions(item.line, groupedRows.has(index)).forEach((optionLine) => {
+      expanded.push({ line: optionLine, protected: false });
     });
   });
 
   const result = [];
-  prepared.forEach((item, index) => {
+  expanded.forEach((item, index) => {
     if (item.protected || item.line.trim()) {
       result.push(item.line);
       return;
     }
-    const nextItem = prepared.slice(index + 1).find((candidate) => {
+    const nextItem = expanded.slice(index + 1).find((candidate) => {
       return candidate.protected || candidate.line.trim();
     });
     const previousLine = [...result].reverse().find((candidate) => candidate.trim()) || "";
@@ -1883,6 +1938,9 @@ function renderImportDrafts() {
   $("saveImportDraftsBtn").disabled = false;
   $("commitImportBtn").disabled = false;
   task.drafts.forEach((draft, index) => {
+    for (const field of ["question", "answer", "analysis", "remarks"]) {
+      if (field in draft) draft[field] = normalizeLineBreaks(draft[field]);
+    }
     const card = document.createElement("article");
     card.className = `import-draft-card${draft.requires_attention ? " needs-attention" : ""}`;
     card.dataset.draftId = draft.id;
