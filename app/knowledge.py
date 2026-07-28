@@ -10,13 +10,13 @@ from app import config
 @lru_cache(maxsize=1)
 def knowledge_by_block() -> dict[str, list[str]]:
     if not config.KNOWLEDGE_FILE.exists():
-        return {name: [] for name in config.BLOCKS.values()}
+        return {name: [] for name in config.BLOCK_OPTIONS.values()}
     loaded = yaml.safe_load(config.KNOWLEDGE_FILE.read_text(encoding="utf-8")) or {}
     if not isinstance(loaded, dict):
-        return {name: [] for name in config.BLOCKS.values()}
+        return {name: [] for name in config.BLOCK_OPTIONS.values()}
     return {
         block: [str(item).strip() for item in loaded.get(block, []) if str(item).strip()]
-        for block in config.BLOCKS.values()
+        for block in config.BLOCK_OPTIONS.values()
     }
 
 

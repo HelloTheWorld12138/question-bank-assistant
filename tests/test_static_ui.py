@@ -23,6 +23,41 @@ def test_secondary_tasks_are_grouped_under_their_modules():
     assert "题库备份" not in html
 
 
+def test_sidebar_exposes_two_question_bank_taxonomies_and_settings_shortcut():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'data-taxonomy-mode="block"' in html
+    assert 'data-taxonomy-mode="type"' in html
+    assert 'id="taxonomyList"' in html
+    assert 'class="header-settings" data-workspace-target="settings"' in html
+    assert "function renderTaxonomyList()" in javascript
+    assert 'switchWorkspaceView("library")' in javascript
+
+
+def test_secondary_navigation_is_in_header_and_footer_shows_product_status():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+
+    header_start = html.index('<header class="app-header">')
+    header_end = html.index("</header>", header_start)
+    header = html[header_start:header_end]
+    sidebar_start = html.index('<div class="navigation-shell">')
+    sidebar_end = html.index('<main class="layout">', sidebar_start)
+    sidebar = html[sidebar_start:sidebar_end]
+
+    assert 'class="header-workspace-nav subtask-nav"' in header
+    assert 'data-module-menu="entry"' in header
+    assert 'data-module-menu="entry"' not in sidebar
+    assert "题库已就绪" in header
+    assert "题库状态正常" in sidebar
+    assert 'id="sidebarVersion"' in sidebar
+    assert 'aria-label="用户 Helios"' not in header
+    library_menu = header.split('data-module-menu="library"', 1)[1].split("</div>", 1)[0]
+    assert 'data-workspace-target="settings"' not in library_menu
+    assert 'settings: "settings"' in javascript
+
+
 def test_import_review_can_select_all_pending_drafts():
     html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
     javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")

@@ -40,7 +40,7 @@ const VIEW_MODULES = {
   import: "entry",
   manual: "entry",
   library: "library",
-  settings: "library",
+  settings: "settings",
   select: "export",
   export: "export",
 };
@@ -50,6 +50,7 @@ const MODULE_DEFAULT_VIEWS = {
   export: "select",
 };
 const moduleLastView = { ...MODULE_DEFAULT_VIEWS };
+let taxonomyMode = "block";
 
 function switchWorkspaceView(requestedView, { updateHash = true } = {}) {
   const view = WORKSPACE_VIEWS.has(requestedView) ? requestedView : "import";
@@ -661,6 +662,56 @@ function optionElement(value, text) {
   return option;
 }
 
+function renderTaxonomyList() {
+  const holder = $("taxonomyList");
+  if (!holder || !state.options) return;
+  holder.innerHTML = "";
+  const items =
+    taxonomyMode === "block"
+      ? (state.options.blocks || []).map((item) => item.name)
+      : state.options.question_types || [];
+  if (taxonomyMode === "type") {
+    const allButton = document.createElement("button");
+    allButton.type = "button";
+    allButton.className = "taxonomy-item";
+    allButton.textContent = "全部题型";
+    allButton.addEventListener("click", () => applyTaxonomyFilter(""));
+    holder.appendChild(allButton);
+  }
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "taxonomy-item";
+    button.textContent = item;
+    button.addEventListener("click", () => applyTaxonomyFilter(item));
+    holder.appendChild(button);
+  }
+}
+
+function applyTaxonomyFilter(value) {
+  if (taxonomyMode === "block") {
+    $("libraryBlock").value = value;
+    $("libraryQuestionType").value = "";
+  } else {
+    $("libraryQuestionType").value = value;
+    $("libraryBlock").value = "";
+  }
+  switchWorkspaceView("library");
+  searchLibraryQuestions();
+}
+
+function bindTaxonomyNavigation() {
+  for (const button of document.querySelectorAll("[data-taxonomy-mode]")) {
+    button.addEventListener("click", () => {
+      taxonomyMode = button.dataset.taxonomyMode;
+      for (const tab of document.querySelectorAll("[data-taxonomy-mode]")) {
+        tab.classList.toggle("is-active", tab === button);
+      }
+      renderTaxonomyList();
+    });
+  }
+}
+
 function renderSystemStatus() {
   if (!state.options) return;
   const status = $("pandocStatus");
@@ -679,6 +730,10 @@ function renderSystemStatus() {
 async function loadOptions() {
   const response = await fetch("/api/options");
   state.options = await response.json();
+  const sidebarVersion = $("sidebarVersion");
+  if (sidebarVersion) {
+    sidebarVersion.textContent = `题搭子 v${state.options.app_version || "1.0.0"}`;
+  }
 
   for (const block of state.options.blocks) {
     $("blockCode").appendChild(optionElement(block.code, block.name));
@@ -709,6 +764,7 @@ async function loadOptions() {
     $("examTemplate").appendChild(option);
   }
 
+  renderTaxonomyList();
   renderSystemStatus();
   $("convertWordBtn").disabled = !state.options.pandoc;
   if (!state.options.pandoc) {
@@ -2839,6 +2895,7 @@ async function classifyCurrentQuestion() {
 }
 
 function bindEvents() {
+  bindTaxonomyNavigation();
   $("draftBtn").addEventListener("click", generateDraft);
   $("convertWordBtn").addEventListener("click", convertWordToMarkdown);
   $("files").addEventListener("change", (event) => {

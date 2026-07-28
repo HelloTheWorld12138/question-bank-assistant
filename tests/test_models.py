@@ -158,7 +158,7 @@ def test_ollama_health_and_classification_need_no_cloud_consent(isolated_data, m
     result = models.classify_question({"question_text": "电路题", "consent": False})
 
     assert health["ok"] is True
-    assert result["draft"]["板块"] == "电学"
+    assert result["draft"]["板块"] == "电磁学"
 
 
 def test_model_candidate_ranking_uses_minimal_metadata(isolated_data, monkeypatch):

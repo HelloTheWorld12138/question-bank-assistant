@@ -18,6 +18,16 @@ def test_health_and_question_api(isolated_data):
         app_script = client.get("/app.js")
         assert app_script.status_code == 200
         assert app_script.headers["cache-control"] == "no-cache, max-age=0, must-revalidate"
+        options = client.get("/api/options")
+        assert [item["name"] for item in options.json()["blocks"]] == [
+            "力学",
+            "电磁学",
+            "热学",
+            "光学",
+            "近代物理",
+            "物理实验",
+            "物理学史、方法、单位制、常识",
+        ]
 
         response = client.post(
             "/api/questions",
