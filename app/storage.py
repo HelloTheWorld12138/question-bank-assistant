@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 
 from app import config
+from app.content import normalize_line_breaks
 from app.errors import AppError, NotFoundError
 
 
@@ -145,7 +146,7 @@ def split_markdown_sections(text: str) -> tuple[dict[str, Any], dict[str, str]]:
         collected[current].append(raw_line)
 
     for name, lines in collected.items():
-        sections[name] = "\n".join(lines).strip()
+        sections[name] = normalize_line_breaks("\n".join(lines))
     return metadata, sections
 
 
@@ -164,12 +165,16 @@ def normalize_metadata(metadata: dict[str, Any], *, for_write: bool = False) -> 
 def build_markdown(metadata: dict[str, Any], sections: dict[str, str]) -> str:
     normalized = normalize_metadata(metadata, for_write=True)
     frontmatter = yaml.safe_dump(normalized, allow_unicode=True, sort_keys=False).strip()
+    content = {
+        name: normalize_line_breaks(sections.get(name, ""))
+        for name in SECTION_NAMES
+    }
     return (
         f"---\n{frontmatter}\n---\n\n"
-        f"# 题目\n\n{sections.get('题目', '').strip()}\n\n"
-        f"# 答案\n\n{sections.get('答案', '').strip()}\n\n"
-        f"# 解析\n\n{sections.get('解析', '').strip()}\n\n"
-        f"# 备注\n\n{sections.get('备注', '').strip()}\n"
+        f"# 题目\n\n{content['题目']}\n\n"
+        f"# 答案\n\n{content['答案']}\n\n"
+        f"# 解析\n\n{content['解析']}\n\n"
+        f"# 备注\n\n{content['备注']}\n"
     )
 
 

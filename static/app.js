@@ -116,6 +116,79 @@ function appendFormattedText(container, text) {
   });
 }
 
+function isOptionLine(line) {
+  return /^[ \t]*[A-HＡ-Ｈ](?:[．.、:：)）]|\s+)/.test(String(line || ""));
+}
+
+function isStandaloneContentBlock(line) {
+  return /^\s*(?:!\[[^\]]*\]\([^)]+\)(?:\{[^}\n]*\})?|\$\$|\\\[|\\\])\s*$/.test(
+    String(line || ""),
+  );
+}
+
+function normalizeLineBreaks(value) {
+  const source = String(value || "").replace(/\r\n?/g, "\n");
+  const prepared = [];
+  let inFence = false;
+  const rawLines = source.split("\n");
+  rawLines.forEach((rawLine, index) => {
+    if (/^\s*(```|~~~)/.test(rawLine)) {
+      prepared.push({ line: rawLine, protected: true });
+      inFence = !inFence;
+      return;
+    }
+    if (inFence) {
+      prepared.push({ line: rawLine, protected: true });
+      return;
+    }
+    let line = rawLine.replace(/[ \t]+$/, "");
+    if (/^[ \t]*>[ \t]*$/.test(line)) {
+      const previousLine =
+        [...rawLines.slice(0, index)].reverse().find((candidate) => candidate.trim()) || "";
+      const nextLine =
+        rawLines.slice(index + 1).find((candidate) => candidate.trim()) || "";
+      const quotedOption = /^([ \t]*)>\s*([A-HＡ-Ｈ](?:[．.、:：)）]|\s+).*)$/;
+      if (quotedOption.test(previousLine) || quotedOption.test(nextLine)) return;
+    }
+    line = line.replace(
+      /^([ \t]*)>\s*([A-HＡ-Ｈ](?:[．.、:：)）]|\s+).*)$/,
+      "$1$2",
+    );
+    prepared.push({ line, protected: false });
+  });
+
+  const result = [];
+  prepared.forEach((item, index) => {
+    if (item.protected || item.line.trim()) {
+      result.push(item.line);
+      return;
+    }
+    const nextItem = prepared.slice(index + 1).find((candidate) => {
+      return candidate.protected || candidate.line.trim();
+    });
+    const previousLine = [...result].reverse().find((candidate) => candidate.trim()) || "";
+    if (
+      nextItem &&
+      isOptionLine(nextItem.line) &&
+      previousLine &&
+      !isStandaloneContentBlock(previousLine)
+    ) {
+      return;
+    }
+    if (result.length && !result[result.length - 1].trim()) return;
+    result.push("");
+  });
+  return result.join("\n").trim();
+}
+
+function normalizeFields(fieldIds) {
+  for (const fieldId of fieldIds) {
+    const field = $(fieldId);
+    if (!field) continue;
+    field.value = normalizeLineBreaks(field.value);
+  }
+}
+
 function uploadItemForToken(token) {
   return state.uploadItems.find((item) => item.token === token);
 }
@@ -341,7 +414,7 @@ function renderMath(container, latex, displayMode = false) {
 function renderRichPreview(markdown, container, emptyText = "这里会显示排版效果") {
   if (!container) return;
   container.innerHTML = "";
-  const source = String(markdown || "");
+  const source = normalizeLineBreaks(markdown);
   if (!source.trim()) {
     container.classList.add("is-empty");
     container.textContent = emptyText;
@@ -349,9 +422,14 @@ function renderRichPreview(markdown, container, emptyText = "这里会显示排�
   }
   container.classList.remove("is-empty");
   let lastIndex = 0;
+  let previousWasBlock = false;
   for (const match of source.matchAll(RICH_CONTENT_RE)) {
-    appendFormattedText(container, source.slice(lastIndex, match.index));
     const token = match[0];
+    const isBlock = token.startsWith("![") || token.startsWith("$$") || token.startsWith("\\[");
+    let precedingText = source.slice(lastIndex, match.index);
+    if (previousWasBlock) precedingText = precedingText.replace(/^\n+/, "");
+    if (isBlock) precedingText = precedingText.replace(/\n+$/, "");
+    appendFormattedText(container, precedingText);
     if (token.startsWith("![")) {
       const imageMatch = token.match(/^!\[([^\]]*)\]\(([^)]+)\)(?:\{([^}\n]*)\})?$/);
       if (imageMatch) {
@@ -388,8 +466,11 @@ function renderRichPreview(markdown, container, emptyText = "这里会显示排�
       renderMath(container, token.slice(1, -1), false);
     }
     lastIndex = Number(match.index) + token.length;
+    previousWasBlock = isBlock;
   }
-  appendFormattedText(container, source.slice(lastIndex));
+  let trailingText = source.slice(lastIndex);
+  if (previousWasBlock) trailingText = trailingText.replace(/^\n+/, "");
+  appendFormattedText(container, trailingText);
 }
 
 function renderManualPreviews() {
@@ -692,6 +773,7 @@ function placeUnassignedUploads() {
 }
 
 function generateDraft() {
+  normalizeFields(MANUAL_SECTION_IDS);
   if (!$("questionText").value.trim()) {
     alert("请先填写题目。");
     return;
@@ -946,13 +1028,17 @@ async function convertWordToMarkdown() {
   const fallback = data.markdown || "";
   const target = $("convertTarget").value;
   if (target === "questionText") {
-    $("questionText").value = sections.question || fallback;
-    $("answerText").value = mergeText($("answerText").value, sections.answer || "");
-    $("analysisText").value = mergeText($("analysisText").value, sections.analysis || "");
+    $("questionText").value = normalizeLineBreaks(sections.question || fallback);
+    $("answerText").value = normalizeLineBreaks(
+      mergeText($("answerText").value, sections.answer || ""),
+    );
+    $("analysisText").value = normalizeLineBreaks(
+      mergeText($("analysisText").value, sections.analysis || ""),
+    );
   } else {
     const sectionName = target === "answerText" ? "answer" : "analysis";
     const convertedText = sections[sectionName] || sections.question || data.text_markdown || fallback;
-    $(target).value = mergeText($(target).value, convertedText);
+    $(target).value = normalizeLineBreaks(mergeText($(target).value, convertedText));
   }
   fillMetadata(data.metadata || {});
 
@@ -996,6 +1082,7 @@ function appendFormValue(form, key, value) {
 
 async function saveQuestion() {
   if (!state.draftReady) return;
+  normalizeFields(MANUAL_SECTION_IDS);
   const unresolved = state.formulaItems.filter((item) => !item.confirmed);
   if (unresolved.length) {
     alert(`还有 ${unresolved.length} 张疑似公式图片未处理。`);
@@ -1475,10 +1562,10 @@ async function openQuestionEditor(questionId) {
   $("editSource").value = metadata["来源"] || "";
   $("editKnowledge").value = metadataLines(metadata["知识点"]);
   $("editTypes").value = metadataLines(metadata["类型"]);
-  $("editQuestionText").value = sections["题目"] || "";
-  $("editAnswerText").value = sections["答案"] || "";
-  $("editAnalysisText").value = sections["解析"] || "";
-  $("editRemarks").value = sections["备注"] || "";
+  $("editQuestionText").value = normalizeLineBreaks(sections["题目"] || "");
+  $("editAnswerText").value = normalizeLineBreaks(sections["答案"] || "");
+  $("editAnalysisText").value = normalizeLineBreaks(sections["解析"] || "");
+  $("editRemarks").value = normalizeLineBreaks(sections["备注"] || "");
   state.editingImages = Array.from(metadata["图片"] || []);
   renderEditingImages();
   renderEditPreviews();
@@ -1487,6 +1574,7 @@ async function openQuestionEditor(questionId) {
 
 async function saveQuestionEdit() {
   if (!state.editingId) return;
+  normalizeFields([...EDIT_SECTION_IDS, "editRemarks"]);
   const mainType = $("editMainType").value;
   const typeValues = lines($("editTypes").value);
   if (mainType && !typeValues.includes(mainType)) typeValues.unshift(mainType);

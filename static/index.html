@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.6.2" />
+    <link rel="stylesheet" href="./style.css?v=0.6.3" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -207,6 +207,7 @@
             </div>
           </div>
           <textarea id="questionText" rows="8" aria-label="题目" placeholder="粘贴题目，或从 Word 读取"></textarea>
+          <div class="field-tip">按一次回车换到下一行；空一行表示另起一段。</div>
           <div id="questionPreview" class="content-preview" aria-label="题目预览"></div>
         </div>
         <div class="two-col">
@@ -571,6 +572,7 @@
             </div>
           </div>
           <textarea id="editQuestionText" rows="8" aria-label="编辑题目"></textarea>
+          <div class="field-tip">按一次回车换到下一行；空一行表示另起一段。</div>
           <div id="editQuestionPreview" class="content-preview"></div>
         </div>
         <div class="two-col">
@@ -644,6 +646,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.2"></script>
+    <script src="./app.js?v=0.6.3"></script>
   </body>
 </html>

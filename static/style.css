@@ -575,6 +575,12 @@ button.compact {
   font-size: 14px;
 }
 
+.field-tip {
+  color: #6f7f8b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .formula-tools,
 .formula-choices,
 .image-card-actions {

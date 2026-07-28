@@ -28,6 +28,23 @@ def test_markdown_round_trip_uses_schema_and_canonical_difficulty(isolated_data)
     assert loaded_sections == sections
 
 
+def test_markdown_round_trip_normalizes_option_spacing(isolated_data):
+    storage.write_question(
+        "LXJC0001",
+        {"id": "LXJC0001"},
+        {
+            "题目": "题干\n\n> A．选项一\n>\n> B．选项二",
+            "答案": "",
+            "解析": "",
+            "备注": "",
+        },
+    )
+
+    _, sections = storage.read_question("LXJC0001")
+
+    assert sections["题目"] == "题干\nA．选项一\nB．选项二"
+
+
 def test_old_markdown_difficulty_remains_readable(isolated_data):
     old_markdown = """---
 id: LXJC0001

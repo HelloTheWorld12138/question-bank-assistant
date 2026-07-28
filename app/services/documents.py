@@ -13,6 +13,7 @@ from fastapi import UploadFile
 
 from app import config, mathtype
 from app.agent import opencode_available, run_opencode
+from app.content import normalize_line_breaks
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, formula_ocr_available, has_editable_math
 from app.storage import ensure_dirs
@@ -90,7 +91,7 @@ def normalize_converted_markdown(markdown: str, draft_id: str) -> str:
             f"{config.DRAFT_ASSETS_DIR}\\{draft_id}\\",
             f"/draft-assets/{draft_id}/",
         )
-    return re.sub(r"\n{3,}", "\n\n", markdown).strip()
+    return normalize_line_breaks(markdown)
 
 
 def marker_name(line: str) -> str | None:

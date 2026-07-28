@@ -13,6 +13,7 @@ from fastapi import UploadFile
 from PIL import Image, ImageOps
 
 from app import config, storage
+from app.content import normalize_line_breaks
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, math_delimiter_issue
 from app.services import office
@@ -633,9 +634,18 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             continue
         question_label = metadata.get("id", question_id)
         image_names = [str(item) for item in metadata.get("图片", []) or []]
-        question_text = rewrite_export_image_links(sections.get("题目", ""), image_names)
-        answer_text = rewrite_export_image_links(sections.get("答案", ""), image_names)
-        analysis_text = rewrite_export_image_links(sections.get("解析", ""), image_names)
+        question_text = rewrite_export_image_links(
+            normalize_line_breaks(sections.get("题目", "")),
+            image_names,
+        )
+        answer_text = rewrite_export_image_links(
+            normalize_line_breaks(sections.get("答案", "")),
+            image_names,
+        )
+        analysis_text = rewrite_export_image_links(
+            normalize_line_breaks(sections.get("解析", "")),
+            image_names,
+        )
         display_label = str(display_labels.get(str(question_id)) or number).strip()[:20]
         label = f"{display_label}. 【{question_label}】" if show_ids else f"{display_label}."
         question_type = str(metadata.get("题型") or "其他")
@@ -702,7 +712,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             [
                 pandoc_path,
                 str(exam_md),
-                "--from=markdown+tex_math_dollars+raw_attribute+link_attributes",
+                "--from=markdown+tex_math_dollars+raw_attribute+link_attributes+hard_line_breaks",
                 "--standalone",
                 f"--resource-path={config.ASSETS_DIR}",
                 f"--reference-doc={template_path}",

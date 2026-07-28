@@ -268,7 +268,10 @@ def test_formal_export_uses_template_and_officecli_review(isolated_data, monkeyp
     assert exported["validation"]["ok"] is True
     assert exported["preview_filename"].endswith("_预览.html")
     assert (config.EXPORT_DIR / exported["preview_filename"]).exists()
-    assert "--from=markdown+tex_math_dollars+raw_attribute+link_attributes" in captured_command
+    assert (
+        "--from=markdown+tex_math_dollars+raw_attribute+link_attributes+hard_line_breaks"
+        in captured_command
+    )
     assert any(argument.startswith("--reference-doc=") for argument in captured_command)
     assert "formal_exam.docx" in " ".join(captured_command)
     assert "# 参考答案" in markdown
