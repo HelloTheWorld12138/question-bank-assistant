@@ -69,18 +69,20 @@ def nearby_text(markdown: str, start: int, end: int, radius: int = 120) -> str:
     return re.sub(r"\s+", " ", markdown[max(0, start - radius) : min(len(markdown), end + radius)]).strip()
 
 
-def is_formula_like(path: Path, context: str) -> tuple[bool, str]:
+def is_formula_like(path: Path, context: str, alt_text: str = "") -> tuple[bool, str]:
     ext = path.suffix.lower()
     if ext in FORMULA_EXTENSIONS:
         return True, "WMF/EMF 常见于旧 MathType 公式"
+    label = f"{alt_text} {path.stem}".lower()
+    if re.search(r"(公式|方程|formula|equation|math)", label):
+        return True, "图片名称表明它是公式"
     width, height = image_size(path)
-    if width and height:
-        ratio = width / max(height, 1)
-        if height <= 120 and width <= 900:
-            return True, "图片尺寸接近行内公式"
-        if height <= 260 and ratio >= 3:
-            return True, "图片比例接近长公式"
-    if re.search(r"(公式|表达式|方程|函数|解析式|求|=|≈|≤|≥|∑|√|frac|sin|cos|tan)", context):
+    formula_context = re.search(
+        r"(公式|表达式|方程|解析式|等式|不等式|=|≈|≤|≥|∑|√|\\frac|\\sqrt)",
+        context,
+    )
+    figure_context = re.search(r"(如图|下图|图\s*\d|示意图|曲线|图像|电路图|装置图)", context)
+    if formula_context and not figure_context:
         if width is None or height is None or height <= 260:
             return True, "上下文疑似公式"
     return False, ""
@@ -141,7 +143,9 @@ def detect_formula_items(markdown: str, draft_dir: Path, draft_id: str) -> list[
         if not path:
             continue
         context = nearby_text(markdown, match.start(), match.end())
-        formula_like, reason = is_formula_like(path, context)
+        alt_match = re.match(r"!\[([^\]]*)\]", match.group(0))
+        alt_text = alt_match.group(1).strip() if alt_match else ""
+        formula_like, reason = is_formula_like(path, context, alt_text)
         if not formula_like:
             continue
         width, height = image_size(path)

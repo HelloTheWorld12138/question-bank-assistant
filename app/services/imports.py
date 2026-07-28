@@ -506,7 +506,10 @@ def _drafts_from_pages(pages: list[dict[str, Any]], source_name: str, source_dir
     return drafts
 
 
-def _drafts_from_docx(path: Path, source_name: str) -> list[dict[str, Any]]:
+def _drafts_from_docx(
+    path: Path,
+    source_name: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     converted = documents.convert_docx_path(path)
     original_draft_id = str(converted.get("draft_id") or "")
     source_dir = config.DRAFT_ASSETS_DIR / original_draft_id if original_draft_id else path.parent
@@ -532,7 +535,7 @@ def _drafts_from_docx(path: Path, source_name: str) -> list[dict[str, Any]]:
     ]
     if original_draft_id:
         shutil.rmtree(source_dir, ignore_errors=True)
-    return drafts
+    return drafts, dict(converted.get("mathtype") or {})
 
 
 def _plain_segments_from_path(path: Path, work_dir: Path) -> list[dict[str, str]]:
@@ -636,8 +639,9 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
     input_path = input_dir / f"questions{suffix}"
     await _save_upload(file, input_path)
 
+    mathtype_summary: dict[str, Any] = {}
     if suffix == ".docx":
-        drafts = _drafts_from_docx(input_path, file.filename)
+        drafts, mathtype_summary = _drafts_from_docx(input_path, file.filename)
     elif suffix == ".pdf":
         drafts = _drafts_from_pages(_extract_pdf_pages(input_path, work_dir), file.filename, work_dir)
     else:
@@ -662,6 +666,7 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
         "answer_source": answer_name,
         "drafts": drafts,
         "ocr": ocr_status(),
+        "mathtype": mathtype_summary,
     }
     save_import_task(task)
     shutil.rmtree(work_dir, ignore_errors=True)

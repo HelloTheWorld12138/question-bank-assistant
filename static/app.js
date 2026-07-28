@@ -488,17 +488,37 @@ async function loadOptions() {
 
   const status = $("pandocStatus");
   const wordReady = Boolean(state.options.pandoc);
+  const legacyFormulaReady = Boolean(state.options.mathtype?.available);
   const ocrReady = Boolean(state.options.ocr?.available);
   status.textContent =
-    `Word：${wordReady ? "可用" : "不可用"} · 图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
+    `Word：${wordReady ? "可用" : "不可用"} · 旧版公式：${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
+    `图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
     `AI：${state.options.agent ? "可用" : "未启用"}`;
   status.classList.add(wordReady ? "ok" : "warn");
-  $("homePandocStatus").textContent = wordReady ? "可用" : "需要安装组件";
+  $("homePandocStatus").textContent =
+    wordReady && legacyFormulaReady ? "可用，支持旧版公式" : wordReady ? "可用" : "需要安装组件";
   $("homeOcrStatus").textContent = ocrReady ? "可用" : "照片需人工核对";
   $("convertWordBtn").disabled = !state.options.pandoc;
   if (!state.options.pandoc) {
     $("convertWordBtn").title = "当前不能读取 Word，请先完成组件安装。";
   }
+}
+
+function mathtypeSummaryText(summary) {
+  const detected = Number(summary?.detected || 0);
+  const converted = Number(summary?.converted || 0);
+  const failed = Number(summary?.failed || 0);
+  if (!detected) return "";
+  if (!failed) return `已将 ${converted} 个旧版公式转为可编辑公式，请在下方预览中抽查。`;
+  return `已转换 ${converted} 个旧版公式；另有 ${failed} 个保留原图，需要重点检查。`;
+}
+
+function renderWordFormulaStatus(summary) {
+  const holder = $("wordFormulaStatus");
+  const message = mathtypeSummaryText(summary);
+  holder.textContent = message;
+  holder.classList.toggle("hidden", !message);
+  holder.classList.toggle("needs-attention", Number(summary?.failed || 0) > 0);
 }
 
 function setSaveEnabled() {
@@ -892,6 +912,7 @@ async function convertWordToMarkdown() {
   const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "正在读取…";
+  renderWordFormulaStatus(null);
 
   const form = new FormData();
   form.append("file", file);
@@ -937,6 +958,7 @@ async function convertWordToMarkdown() {
 
   state.wordDraftId = data.draft_id || "";
   state.wordDraftImages = data.images || [];
+  renderWordFormulaStatus(data.mathtype);
   state.formulaItems = (data.formula_items || []).map((item) => ({
     ...item,
     decision: item.auto_kept ? "keep" : "",
@@ -1974,11 +1996,13 @@ async function analyzeImportFile() {
     const conversionText = conversion.converted
       ? ` 已自动处理 ${conversion.converted} 张旧版公式或题图。`
       : "";
+    const formulaText = mathtypeSummaryText(data.mathtype);
     const failedText = conversion.failed.length
       ? ` 仍有 ${conversion.failed.length} 张图片需人工检查。`
       : "";
     $("importResult").textContent =
-      `已生成 ${data.drafts?.length || 0} 道待审核草稿。${conversionText}${failedText}` +
+      `已生成 ${data.drafts?.length || 0} 道待审核草稿。` +
+      `${formulaText ? ` ${formulaText}` : ""}${conversionText}${failedText}` +
       " 请逐题核对后再入库。";
     renderImportDrafts();
     await loadImportStatus();
@@ -2009,8 +2033,10 @@ async function loadImportTask(taskId) {
     data = conversion.task;
   }
   state.importTask = data;
+  const formulaText = mathtypeSummaryText(data.mathtype);
   $("importResult").textContent =
     `正在继续审核 ${data.source}，任务状态：${data.status}。` +
+    (formulaText ? ` ${formulaText}` : "") +
     (conversion.converted ? ` 已补充处理 ${conversion.converted} 张旧版图片。` : "") +
     (conversion.failed.length ? ` 仍有 ${conversion.failed.length} 张需人工检查。` : "");
   renderImportDrafts();

@@ -6,7 +6,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
 
-from app import config, knowledge, storage
+from app import config, knowledge, mathtype, storage
 from app.agent import opencode_available
 from app.errors import AppError
 from app.math_ocr import formula_ocr_available
@@ -47,6 +47,7 @@ def options() -> dict[str, Any]:
         "pandoc": documents.find_pandoc() is not None,
         "agent": opencode_available(),
         "formula_ocr": formula_ocr_available(),
+        "mathtype": mathtype.mathtype_status(),
         "ocr": import_service.ocr_status(),
         "officecli": office.officecli_status(),
         "templates": [

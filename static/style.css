@@ -595,6 +595,12 @@ button.compact {
   line-height: 1.5;
 }
 
+.inline-note.needs-attention {
+  border-color: #e7cc91;
+  background: #fff7e8;
+  color: #7b5100;
+}
+
 .content-preview {
   min-height: 92px;
   max-height: 360px;

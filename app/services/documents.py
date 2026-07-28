@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import UploadFile
 
-from app import config
+from app import config, mathtype
 from app.agent import opencode_available, run_opencode
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, formula_ocr_available, has_editable_math
@@ -199,7 +199,7 @@ def normalize_agent_metadata(raw: Any) -> dict[str, Any]:
 
 
 def inspect_docx_payload(path: Path) -> dict[str, int]:
-    counts = {"embedded_objects": 0, "wmf_or_emf": 0}
+    counts = {"embedded_objects": 0, "wmf_or_emf": 0, "mathtype_objects": 0}
     with zipfile.ZipFile(path) as archive:
         for name in archive.namelist():
             lower = name.lower()
@@ -207,6 +207,7 @@ def inspect_docx_payload(path: Path) -> dict[str, int]:
                 counts["embedded_objects"] += 1
             if lower.startswith("word/media/") and lower.endswith((".wmf", ".emf")):
                 counts["wmf_or_emf"] += 1
+    counts["mathtype_objects"] = len(mathtype.inspect_mathtype_objects(path))
     return counts
 
 
@@ -225,12 +226,27 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         output_path = temp_path / "output.md"
+        pandoc_input = temp_path / "word-for-import.docx"
         docx_payload = inspect_docx_payload(input_path)
+        try:
+            mathtype_objects = mathtype.prepare_docx_for_pandoc(input_path, pandoc_input)
+        except (OSError, ValueError, zipfile.BadZipFile):
+            mathtype_objects = []
+            shutil.copy2(input_path, pandoc_input)
+        mathml, structural_failures = mathtype.convert_ole_objects_to_mathml(
+            input_path,
+            mathtype_objects,
+        )
+        latex, latex_failures = mathtype.mathml_to_latex(mathml, pandoc_path)
+        mathtype_failures = {
+            **structural_failures,
+            **latex_failures,
+        }
 
         completed = subprocess.run(
             [
                 pandoc_path,
-                str(input_path),
+                str(pandoc_input),
                 "-t",
                 "gfm+tex_math_dollars",
                 "--wrap=none",
@@ -247,6 +263,15 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
         if completed.returncode != 0:
             raise AppError("读取 Word 失败，请确认文件可以正常打开。", status_code=500, code="pandoc_failed")
         markdown = normalize_converted_markdown(output_path.read_text(encoding="utf-8"), draft_id)
+        markdown, mathtype_summary = mathtype.restore_mathtype_markers(
+            markdown,
+            input_path,
+            mathtype_objects,
+            latex,
+            mathtype_failures,
+            draft_dir,
+            draft_id,
+        )
 
     images = []
     for image in sorted(draft_dir.rglob("*")):
@@ -290,9 +315,28 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
         warnings.append("发现疑似公式图片，请选择“转为公式”或“保留原图”。")
     if has_editable_math(markdown):
         warnings.append("可编辑公式已保留，请核对显示效果。")
-    if docx_payload["embedded_objects"]:
-        warnings.append("发现旧版公式或内嵌内容，系统会先保留原貌并转换为可显示图片。")
-    if docx_payload["wmf_or_emf"]:
+    if mathtype_summary["detected"]:
+        if not mathtype_summary["failed"]:
+            warnings.append(
+                f"已将 {mathtype_summary['converted']} 个旧版 MathType 公式转为可编辑公式。"
+            )
+        else:
+            warnings.append(
+                f"已转换 {mathtype_summary['converted']} 个旧版公式；"
+                f"另有 {mathtype_summary['failed']} 个已保留原图，请重点检查。"
+            )
+    unknown_embedded = max(
+        0,
+        docx_payload["embedded_objects"] - mathtype_summary["detected"],
+    )
+    if unknown_embedded:
+        warnings.append(f"发现 {unknown_embedded} 个其他内嵌对象，请核对导入结果。")
+    remaining_metafiles = [
+        item
+        for item in images
+        if Path(item["name"]).suffix.lower() in {".wmf", ".emf"}
+    ]
+    if remaining_metafiles:
         warnings.append("发现旧格式图片，系统会在本机自动转换为 PNG；请核对公式和题图是否完整。")
 
     return {
@@ -305,6 +349,7 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
         "images": images,
         "formula_items": formula_items,
         "formula_ocr_available": formula_ocr_available(),
+        "mathtype": mathtype_summary,
         "agent_used": agent_used,
         "warnings": warnings,
     }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.6.1" />
+    <link rel="stylesheet" href="./style.css?v=0.6.2" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -194,7 +194,8 @@
             </select>
             <button type="button" id="convertWordBtn" class="secondary">读取内容</button>
           </div>
-          <div class="hint">文字、可编辑公式和图片会一起读取；读取后请检查排版效果。</div>
+          <div class="hint">文字、图片和公式会一起读取；旧版 MathType 公式会优先转成可编辑公式。</div>
+          <div id="wordFormulaStatus" class="inline-note hidden"></div>
         </div>
 
         <div class="content-field">
@@ -643,6 +644,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.1"></script>
+    <script src="./app.js?v=0.6.2"></script>
   </body>
 </html>
