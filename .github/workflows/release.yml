@@ -1,0 +1,95 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+      - name: Verify tag version
+        run: |
+          test "${GITHUB_REF_NAME#v}" = "$(python3 -c 'from app.config import APP_VERSION; print(APP_VERSION)')"
+      - name: Build DMG
+        run: bash scripts/build_macos_dmg.sh
+      - name: Name release artifact
+        run: mv dist/题搭子.dmg "dist/Tidazi-${GITHUB_REF_NAME#v}-macOS-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macOS-${{ matrix.arch }}
+          path: dist/Tidazi-*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+      - name: Verify tag version
+        shell: pwsh
+        run: |
+          $version = python -c "from app.config import APP_VERSION; print(APP_VERSION)"
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME does not match application version $version." }
+      - name: Build installer
+        shell: pwsh
+        run: scripts/build_windows.ps1
+      - name: Name release artifact
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "dist\题搭子-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          Move-Item $installer.FullName "dist\Tidazi-$($env:GITHUB_REF_NAME.Substring(1))-Windows-x64-Setup.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Windows-x64
+          path: dist/Tidazi-*-Windows-x64-Setup.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release
+        run: sha256sum Tidazi-* > SHA256SUMS.txt
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* \
+              --title "题搭子 ${TAG#v}" \
+              --generate-notes
+          fi
