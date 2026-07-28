@@ -8,7 +8,7 @@ $Build = Join-Path $Root "build\windows"
 $AppName = "题搭子"
 
 Set-Location $Root
-py -3 -m venv $Venv
+py -3.10 -m venv $Venv
 & $Python -m pip install --upgrade pip
 & $Python -m pip install -r (Join-Path $Root "requirements-build.txt")
 
