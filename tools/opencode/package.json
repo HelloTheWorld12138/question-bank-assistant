@@ -1,6 +1,0 @@
-{
-  "private": true,
-  "dependencies": {
-    "opencode-ai": "^1.17.11"
-  }
-}
