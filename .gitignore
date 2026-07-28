@@ -1,5 +1,7 @@
 # Python
 .venv/
+.venv-build/
+.venv-build-win/
 __pycache__/
 *.py[cod]
 
@@ -25,6 +27,9 @@ exports/*
 !exports/.gitkeep
 logs/
 *.log
+build/
+dist/
+*.spec
 
 # Local generated vault data
 vault/assets/*

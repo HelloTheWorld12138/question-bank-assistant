@@ -7,3 +7,4 @@ jsonschema==4.25.1
 keyring==25.7.0
 PyMuPDF==1.26.5
 Pillow==11.3.0
+pywebview==5.4

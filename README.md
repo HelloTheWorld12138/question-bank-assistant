@@ -1,4 +1,4 @@
-# 高中物理题库助手
+# 题搭子
 
 面向高中物理教师的本地题库与组卷工具。当前仓库处于从网页 MVP 向独立 Windows APP 演进的阶段。
 
@@ -118,7 +118,7 @@ python -m pytest
 
 ## 重要说明
 
-- 当前仍是开发版，不是可直接分发给教师的正式安装包；
+- macOS 可执行 `bash scripts/build_macos_dmg.sh` 生成免 Python 的安装镜像 `dist/题搭子.dmg`；首次打开时，macOS 可能需要在“系统设置 → 隐私与安全性”中确认打开未公证的本地应用；
 - OpenCode 和公式 OCR 已不再是基础导入的硬依赖；Pandoc 负责 Markdown/DOCX 转换，OfficeCLI 负责结构读取、模板能力、导出复核和预览；
 - 旧版 MathType 公式采用本机结构化读取；当前开发版使用系统 Ruby，Windows 教师版将在第七阶段内置固定运行时；
 - 公式预览组件已随项目本地提供，教师使用时不会临时访问境外 CDN；

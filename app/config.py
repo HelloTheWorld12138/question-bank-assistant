@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 
 
-APP_NAME = "高中物理题库助手"
+APP_NAME = "题搭子"
 APP_VERSION = "0.6.9-dev"
 SCHEMA_VERSION = 1
 

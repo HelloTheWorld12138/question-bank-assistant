@@ -1,0 +1,17 @@
+name: Build Windows package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build package
+        shell: pwsh
+        run: scripts/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 题搭子-Windows
+          path: dist/题搭子-Windows.zip
