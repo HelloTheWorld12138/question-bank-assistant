@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.6.6" />
+    <link rel="stylesheet" href="./style.css?v=0.6.7" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -23,103 +23,50 @@
         <div class="brand-mark">物</div>
         <div>
           <h1>高中物理题库助手</h1>
-          <p>导入、找题、组卷</p>
+          <p>教师本地题库</p>
         </div>
-      </div>
-      <div class="header-actions">
-        <div id="pandocStatus" class="status">正在检查功能…</div>
       </div>
     </header>
 
-    <nav class="task-nav" aria-label="主要功能">
-      <button type="button" class="task-nav-item is-active" data-workspace-target="home">首页</button>
-      <button type="button" class="task-nav-item" data-workspace-target="import">导入资料</button>
-      <button type="button" class="task-nav-item" data-workspace-target="manual">录入单题</button>
-      <button type="button" class="task-nav-item" data-workspace-target="search">找题</button>
-      <button type="button" class="task-nav-item" data-workspace-target="export">生成试卷</button>
-      <button type="button" class="task-nav-item" data-workspace-target="maintenance">管理题库</button>
-      <button type="button" class="task-nav-item" data-workspace-target="settings">AI 辅助</button>
-    </nav>
+    <div class="navigation-shell">
+      <nav class="module-nav" aria-label="主要板块">
+        <button type="button" class="module-nav-item is-active" data-module-target="entry">
+          <span class="module-number">1</span>
+          <span><strong>录入题库</strong><small>添加新题</small></span>
+        </button>
+        <button type="button" class="module-nav-item" data-module-target="library">
+          <span class="module-number">2</span>
+          <span><strong>查看题库</strong><small>查找与管理</small></span>
+        </button>
+        <button type="button" class="module-nav-item" data-module-target="export">
+          <span class="module-number">3</span>
+          <span><strong>导出题目</strong><small>生成 Word</small></span>
+        </button>
+      </nav>
+      <nav class="subtask-nav" aria-label="当前板块功能">
+        <div class="subtask-menu is-active" data-module-menu="entry">
+          <button type="button" class="subtask-nav-item is-active" data-workspace-target="import">批量导入</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="manual">录入单题</button>
+        </div>
+        <div class="subtask-menu" data-module-menu="library">
+          <button type="button" class="subtask-nav-item" data-workspace-target="search">题库列表</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="maintenance">题库维护</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="settings">系统设置</button>
+        </div>
+        <div class="subtask-menu" data-module-menu="export">
+          <button type="button" class="subtask-nav-item" data-workspace-target="export">组卷并导出</button>
+        </div>
+      </nav>
+    </div>
 
     <main class="layout">
-      <section class="workspace-home workspace-view is-active" data-workspace-view="home">
-        <div class="home-hero">
-          <div>
-            <span class="eyebrow">高中物理题库</span>
-            <h2>请选择要做的事</h2>
-            <p>每项任务独立完成，按页面提示操作即可。</p>
-          </div>
-          <div class="home-hero-badge">
-            <strong>数据在本机</strong>
-            <span>断网也能录题、找题和组卷</span>
-          </div>
-        </div>
-
-        <div class="task-entry-grid">
-          <button type="button" class="task-entry-card entry-import" data-workspace-target="import">
-            <span class="task-entry-icon">导</span>
-            <span class="task-entry-copy">
-              <strong>导入一份资料</strong>
-              <small>从 Word、PDF 或照片批量录题</small>
-            </span>
-            <span class="task-entry-arrow">→</span>
-          </button>
-          <button type="button" class="task-entry-card entry-manual" data-workspace-target="manual">
-            <span class="task-entry-icon">录</span>
-            <span class="task-entry-copy">
-              <strong>录入一道题</strong>
-              <small>粘贴内容或读取一个 Word 文件</small>
-            </span>
-            <span class="task-entry-arrow">→</span>
-          </button>
-          <button type="button" class="task-entry-card entry-search" data-workspace-target="search">
-            <span class="task-entry-icon">找</span>
-            <span class="task-entry-copy">
-              <strong>按要求找题</strong>
-              <small>输入要求，系统从本机题库筛选</small>
-            </span>
-            <span class="task-entry-arrow">→</span>
-          </button>
-          <button type="button" class="task-entry-card entry-export" data-workspace-target="export">
-            <span class="task-entry-icon">卷</span>
-            <span class="task-entry-copy">
-              <strong>生成一份试卷</strong>
-              <small>排好题目顺序并导出 Word</small>
-            </span>
-            <span class="task-entry-arrow">→</span>
-          </button>
-        </div>
-
-        <div class="home-status-grid">
-          <div class="home-status-card">
-            <span>Word 导入与导出</span>
-            <strong id="homePandocStatus">正在检查</strong>
-          </div>
-          <div class="home-status-card">
-            <span>图片文字识别</span>
-            <strong id="homeOcrStatus">正在检查</strong>
-          </div>
-          <div class="home-status-card">
-            <span>AI 自动分类</span>
-            <strong id="homeModelStatus">可选</strong>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel import-center workspace-view" data-workspace-view="import">
+      <section class="panel import-center workspace-view is-active" data-workspace-view="import">
         <div class="section-title">
-          <div>
-            <span class="step-badge">导</span>
-            <span>导入整份资料</span>
-          </div>
+          <h2>批量导入</h2>
           <div class="action-group">
             <button type="button" id="saveImportDraftsBtn" class="secondary" disabled>保存进度</button>
-            <button type="button" id="commitImportBtn" disabled>将已核对题目入库</button>
+            <button type="button" id="commitImportBtn" disabled>确认入库</button>
           </div>
-        </div>
-        <div class="notice">
-          上传题目文件，也可同时上传教师版答案与解析。系统会自动去掉重复题目，并读取难度、来源和知识点；
-          请逐题核对，只有勾选的题目才会入库。
         </div>
         <div class="grid">
           <label class="wide">
@@ -133,9 +80,9 @@
         </div>
         <div class="action-group import-actions">
           <button type="button" id="analyzeImportBtn">开始整理</button>
-          <span id="ocrStatus" class="hint">正在检查图片识别功能…</span>
+          <span id="ocrStatus" class="quiet-status"></span>
         </div>
-        <div id="importResult" class="result-box">先选择题目文件，再点击“开始整理”。</div>
+        <div id="importResult" class="result-box"></div>
         <div id="importDrafts" class="import-drafts"></div>
         <details class="recent-imports">
           <summary>继续上次导入</summary>
@@ -145,11 +92,8 @@
 
       <section class="panel panel-primary workspace-view" data-workspace-view="manual">
         <div class="section-title">
-          <div>
-            <span class="step-badge">1</span>
-            <span>录入一道题</span>
-          </div>
-          <button type="button" id="draftBtn">下一步：检查</button>
+          <h2>题目内容</h2>
+          <button type="button" id="draftBtn">检查题目</button>
         </div>
 
         <div class="grid">
@@ -194,7 +138,6 @@
             </select>
             <button type="button" id="convertWordBtn" class="secondary">读取内容</button>
           </div>
-          <div class="hint">文字、图片和公式会一起读取；旧版 MathType 公式会优先转成可编辑公式。</div>
           <div id="wordFormulaStatus" class="inline-note hidden"></div>
         </div>
 
@@ -207,7 +150,6 @@
             </div>
           </div>
           <textarea id="questionText" rows="8" aria-label="题目" placeholder="粘贴题目，或从 Word 读取"></textarea>
-          <div class="field-tip">按一次回车换行；横向排列的 A/B/C/D 选项会自动分行，每行两个也可以。</div>
           <div id="questionPreview" class="content-preview" aria-label="题目预览"></div>
         </div>
         <div class="two-col">
@@ -232,13 +174,10 @@
 
       <section class="panel workspace-view" data-workspace-view="manual">
         <div class="section-title">
-          <div>
-            <span class="step-badge">2</span>
-            <span>检查后入库</span>
-          </div>
+          <h2>分类与确认</h2>
           <button type="button" id="saveBtn" disabled>确认并入库</button>
         </div>
-        <div id="draftHint" class="empty">请先填写题目，再点击“下一步：检查”。</div>
+        <div id="draftHint" class="empty">填写题目后点击“检查题目”。</div>
         <div id="reviewArea" class="hidden">
           <div class="grid">
             <label class="wide">
@@ -256,19 +195,14 @@
           </label>
           <div>
             <div class="minor-title">图片</div>
-            <div class="hint">图片可放入题目、答案或解析；未使用的图片不会入库。</div>
             <div id="imagePreview" class="preview-list"></div>
           </div>
           <div id="formulaPanel" class="formula-panel hidden">
             <div class="minor-title">检查公式图片</div>
-            <div class="hint">每张图片选择“转为公式”或“保留原图”。转换结果可直接预览。</div>
             <div id="formulaList"></div>
           </div>
           <div class="ai-assist-box">
-            <div>
-              <div class="minor-title">自动填写分类（可选）</div>
-              <div class="hint">只处理当前题目，结果仍由老师确认。</div>
-            </div>
+            <div class="minor-title">自动填写分类</div>
             <button type="button" id="aiClassifyBtn" class="secondary">自动填写</button>
           </div>
           <div id="aiClassifyResult" class="result-box hidden"></div>
@@ -277,17 +211,14 @@
 
       <section class="panel workspace-view" data-workspace-view="search">
         <div class="section-title">
-          <div>
-            <span class="step-badge">3</span>
-            <span>找题</span>
-          </div>
+          <h2>题库列表</h2>
           <div class="action-group">
             <button type="button" id="batchEditBtn" class="secondary">修改所选题目</button>
-            <button type="button" id="searchBtn">按条件查找</button>
+            <button type="button" id="searchBtn">筛选</button>
           </div>
         </div>
         <div class="assistant-search">
-          <div class="minor-title">描述你想找的题</div>
+          <div class="minor-title">按要求找题</div>
           <div class="assistant-query-row">
             <textarea
               id="assistantQuery"
@@ -303,54 +234,57 @@
             </label>
             <button type="button" id="assistantAddAllBtn" class="secondary" disabled>全部加入试卷</button>
           </div>
-          <div id="assistantResult" class="result-box">不启用 AI 也能按要求找题。</div>
+          <div id="assistantResult" class="result-box"></div>
           <div id="assistantRecommendations" class="assistant-recommendations"></div>
         </div>
-        <div class="grid">
-          <label class="wide">
-            关键词
-            <input id="searchQuery" placeholder="题目、答案、解析或题号" />
-          </label>
-          <label>
-            板块
-            <select id="searchBlock"><option value="">全部</option></select>
-          </label>
-          <label>
-            题目特点
-            <select id="searchType"><option value="">全部</option></select>
-          </label>
-          <label>
-            难度
-            <input id="searchDifficulty" placeholder="可填 0.63 或 3" />
-          </label>
-          <label>
-            年份
-            <input id="searchYear" placeholder="例如 2025" />
-          </label>
-          <label>
-            来源
-            <input id="searchSource" placeholder="输入来源关键词" />
-          </label>
-          <label>
-            知识点
-            <input id="searchKnowledge" placeholder="输入知识点关键词" />
-          </label>
-          <label>
-            题型
-            <select id="searchQuestionType"><option value="">全部</option></select>
-          </label>
-          <label>
-            排序
-            <select id="searchSort">
-              <option value="id:asc">题号升序</option>
-              <option value="id:desc">题号降序</option>
-              <option value="updated:desc">最近修改</option>
-              <option value="year:desc">年份从新到旧</option>
-              <option value="difficulty:asc">难度从低到高</option>
-              <option value="difficulty:desc">难度从高到低</option>
-            </select>
-          </label>
-        </div>
+        <details class="filter-panel">
+          <summary>按条件筛选</summary>
+          <div class="grid">
+            <label class="wide">
+              关键词
+              <input id="searchQuery" placeholder="题目、答案、解析或题号" />
+            </label>
+            <label>
+              板块
+              <select id="searchBlock"><option value="">全部</option></select>
+            </label>
+            <label>
+              题目特点
+              <select id="searchType"><option value="">全部</option></select>
+            </label>
+            <label>
+              难度
+              <input id="searchDifficulty" placeholder="可填 0.63 或 3" />
+            </label>
+            <label>
+              年份
+              <input id="searchYear" placeholder="例如 2025" />
+            </label>
+            <label>
+              来源
+              <input id="searchSource" placeholder="输入来源关键词" />
+            </label>
+            <label>
+              知识点
+              <input id="searchKnowledge" placeholder="输入知识点关键词" />
+            </label>
+            <label>
+              题型
+              <select id="searchQuestionType"><option value="">全部</option></select>
+            </label>
+            <label>
+              排序
+              <select id="searchSort">
+                <option value="id:asc">题号升序</option>
+                <option value="id:desc">题号降序</option>
+                <option value="updated:desc">最近修改</option>
+                <option value="year:desc">年份从新到旧</option>
+                <option value="difficulty:asc">难度从低到高</option>
+                <option value="difficulty:desc">难度从高到低</option>
+              </select>
+            </label>
+          </div>
+        </details>
         <div class="selection-bar">
           <span>已选 <strong id="selectedCount">0</strong> 题</span>
           <button type="button" id="clearSelectionBtn" class="ghost">清空选择</button>
@@ -376,10 +310,7 @@
 
       <section class="panel workspace-view" data-workspace-view="export">
         <div class="section-title">
-          <div>
-            <span class="step-badge">4</span>
-            <span>生成试卷</span>
-          </div>
+          <h2>组卷并导出</h2>
           <button type="button" id="exportBtn">生成 Word</button>
         </div>
         <div class="grid export-settings">
@@ -426,22 +357,19 @@
         </div>
         <div class="minor-title">题目顺序</div>
         <div id="examSelectionList" class="exam-selection-list">
-          <div class="empty">请先到“找题”页面勾选题目。</div>
+          <div class="empty">请先到“查看题库”勾选题目。</div>
         </div>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="answers" /> 题目 + 答案</label>
           <label class="radio-card"><input type="radio" name="exportMode" value="analysis" /> 题目 + 答案 + 解析</label>
         </div>
-        <div id="exportResult" class="result-box">生成的新试卷不会覆盖以前的文件。</div>
+        <div id="exportResult" class="result-box"></div>
       </section>
 
       <section class="panel workspace-view" data-workspace-view="maintenance">
         <div class="section-title">
-          <div>
-            <span class="step-badge">5</span>
-            <span>管理题库</span>
-          </div>
+          <h2>题库维护</h2>
           <button type="button" id="refreshMaintenanceBtn" class="ghost">刷新</button>
         </div>
         <div class="maintenance-actions">
@@ -450,7 +378,7 @@
           <button type="button" id="restoreTemplatesBtn" class="secondary">恢复默认模板</button>
           <button type="button" id="backupBtn">立即备份</button>
         </div>
-        <div id="maintenanceResult" class="result-box">可检查题库、备份数据和恢复误删题目。</div>
+        <div id="maintenanceResult" class="result-box"></div>
         <div class="maintenance-grid">
           <div>
             <div class="minor-title">回收站</div>
@@ -465,18 +393,14 @@
 
       <section class="panel workspace-view" data-workspace-view="settings">
         <div class="section-title">
-          <div>
-            <span class="step-badge">6</span>
-            <span>AI 辅助（可选）</span>
-          </div>
+          <h2>系统设置</h2>
           <div class="action-group">
             <button type="button" id="testModelBtn" class="secondary">测试连接</button>
             <button type="button" id="saveModelBtn">保存设置</button>
           </div>
         </div>
-        <div class="notice">
-          不设置 AI 也能使用全部基础功能。需要自动分类时，可选择国内模型服务或本机模型。
-        </div>
+        <div id="pandocStatus" class="system-status">正在检查本机功能…</div>
+        <div class="minor-title settings-heading">AI 分类（可选）</div>
         <div class="grid">
           <label>
             模型服务
@@ -572,7 +496,6 @@
             </div>
           </div>
           <textarea id="editQuestionText" rows="8" aria-label="编辑题目"></textarea>
-          <div class="field-tip">按一次回车换到下一行；空一行表示另起一段。</div>
           <div id="editQuestionPreview" class="content-preview"></div>
         </div>
         <div class="two-col">
@@ -599,7 +522,6 @@
         </label>
         <div>
           <div class="minor-title">题目图片</div>
-          <div class="hint">可重新插入位置，或移除不需要的图片。</div>
           <div id="editImageManager" class="preview-list"></div>
         </div>
         <div class="dialog-actions">
@@ -668,6 +590,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.6"></script>
+    <script src="./app.js?v=0.6.7"></script>
   </body>
 </html>

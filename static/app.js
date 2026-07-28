@@ -29,7 +29,6 @@ const METAFILE_RE = /\.(wmf|emf)(?:\?.*)?$/i;
 let metafileConverterPromise = null;
 
 const WORKSPACE_VIEWS = new Set([
-  "home",
   "import",
   "manual",
   "search",
@@ -37,27 +36,55 @@ const WORKSPACE_VIEWS = new Set([
   "maintenance",
   "settings",
 ]);
+const VIEW_MODULES = {
+  import: "entry",
+  manual: "entry",
+  search: "library",
+  maintenance: "library",
+  settings: "library",
+  export: "export",
+};
+const MODULE_DEFAULT_VIEWS = {
+  entry: "import",
+  library: "search",
+  export: "export",
+};
+const moduleLastView = { ...MODULE_DEFAULT_VIEWS };
 
 function switchWorkspaceView(requestedView, { updateHash = true } = {}) {
-  const view = WORKSPACE_VIEWS.has(requestedView) ? requestedView : "home";
+  const view = WORKSPACE_VIEWS.has(requestedView) ? requestedView : "import";
+  const module = VIEW_MODULES[view];
+  moduleLastView[module] = view;
   for (const section of document.querySelectorAll("[data-workspace-view]")) {
     section.classList.toggle("is-active", section.dataset.workspaceView === view);
   }
-  for (const button of document.querySelectorAll(".task-nav-item")) {
+  for (const button of document.querySelectorAll(".subtask-nav-item")) {
     button.classList.toggle("is-active", button.dataset.workspaceTarget === view);
+  }
+  for (const button of document.querySelectorAll(".module-nav-item")) {
+    button.classList.toggle("is-active", button.dataset.moduleTarget === module);
+  }
+  for (const menu of document.querySelectorAll(".subtask-menu")) {
+    menu.classList.toggle("is-active", menu.dataset.moduleMenu === module);
   }
   if (updateHash) {
     history.replaceState(null, "", `#${view}`);
   }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function bindWorkspaceNavigation() {
   for (const button of document.querySelectorAll("[data-workspace-target]")) {
     button.addEventListener("click", () => switchWorkspaceView(button.dataset.workspaceTarget));
   }
+  for (const button of document.querySelectorAll("[data-module-target]")) {
+    button.addEventListener("click", () => {
+      const module = button.dataset.moduleTarget;
+      switchWorkspaceView(moduleLastView[module] || MODULE_DEFAULT_VIEWS[module]);
+    });
+  }
   const initialView = window.location.hash.replace("#", "");
-  switchWorkspaceView(initialView || "home", { updateHash: false });
+  switchWorkspaceView(initialView || "import", { updateHash: false });
 }
 
 function appendUnescapedText(container, text) {
@@ -634,6 +661,21 @@ function optionElement(value, text) {
   return option;
 }
 
+function renderSystemStatus() {
+  if (!state.options) return;
+  const status = $("pandocStatus");
+  const wordReady = Boolean(state.options.pandoc);
+  const legacyFormulaReady = Boolean(state.options.mathtype?.available);
+  const ocrReady = Boolean(state.options.ocr?.available);
+  const aiReady = Boolean(state.modelSettings?.enabled);
+  status.textContent =
+    `Word ${wordReady ? "可用" : "不可用"} · ` +
+    `图片识别${ocrReady ? "可用" : "需人工填写"} · ` +
+    `旧版公式${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
+    `AI 分类${aiReady ? "已启用" : "未启用"}`;
+  status.className = `system-status ${wordReady ? "ok" : "warn"}`;
+}
+
 async function loadOptions() {
   const response = await fetch("/api/options");
   state.options = await response.json();
@@ -664,18 +706,7 @@ async function loadOptions() {
     $("examTemplate").appendChild(option);
   }
 
-  const status = $("pandocStatus");
-  const wordReady = Boolean(state.options.pandoc);
-  const legacyFormulaReady = Boolean(state.options.mathtype?.available);
-  const ocrReady = Boolean(state.options.ocr?.available);
-  status.textContent =
-    `Word：${wordReady ? "可用" : "不可用"} · 旧版公式：${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
-    `图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
-    `AI：${state.options.agent ? "可用" : "未启用"}`;
-  status.classList.add(wordReady ? "ok" : "warn");
-  $("homePandocStatus").textContent =
-    wordReady && legacyFormulaReady ? "可用，支持旧版公式" : wordReady ? "可用" : "需要安装组件";
-  $("homeOcrStatus").textContent = ocrReady ? "可用" : "照片需人工核对";
+  renderSystemStatus();
   $("convertWordBtn").disabled = !state.options.pandoc;
   if (!state.options.pandoc) {
     $("convertWordBtn").title = "当前不能读取 Word，请先完成组件安装。";
@@ -1250,7 +1281,7 @@ function renderExamSelection() {
   if (!ids.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "请先到“找题”页面勾选题目。";
+    empty.textContent = "请先到“查看题库”勾选题目。";
     holder.appendChild(empty);
     return;
   }
@@ -2580,16 +2611,7 @@ function renderModelSettings(data) {
     (settings.local_only ? " · 当前不会连接网络" : "");
   $("aiClassifyBtn").disabled = !settings.enabled;
   $("aiClassifyBtn").title = settings.enabled ? "" : "请先在下方启用并保存 AI 辅助设置。";
-  $("homeModelStatus").textContent = settings.enabled
-    ? "已启用"
-    : "未启用";
-  if (state.options) {
-    const wordReady = Boolean(state.options.pandoc);
-    const ocrReady = Boolean(state.options.ocr?.available);
-    $("pandocStatus").textContent =
-      `Word：${wordReady ? "可用" : "不可用"} · 图片识别：${ocrReady ? "可用" : "需人工录入"} · ` +
-      `AI：${settings.enabled ? "已启用" : "未启用"}`;
-  }
+  renderSystemStatus();
 }
 
 async function loadModelSettings() {
