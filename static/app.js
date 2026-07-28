@@ -1996,15 +1996,14 @@ function renderImportDrafts() {
       if (field in draft) draft[field] = normalizeLineBreaks(draft[field]);
     }
     const card = document.createElement("article");
-    card.className = `import-draft-card${draft.requires_attention ? " needs-attention" : ""}`;
+    card.className = "import-draft-card";
     card.dataset.draftId = draft.id;
 
     const header = document.createElement("div");
     header.className = "import-draft-header";
     const title = document.createElement("div");
-    const confidence = Math.round(Number(draft.confidence || 0) * 100);
     const numberText = draft.original_number ? `原题 ${draft.original_number}` : "题号待确认";
-    title.textContent = `第 ${index + 1} 道 · ${numberText} · 识别可信度 ${confidence}%`;
+    title.textContent = `第 ${index + 1} 道 · ${numberText}`;
     const confirmedLabel = document.createElement("label");
     confirmedLabel.className = "confirm-draft";
     const confirmed = document.createElement("input");
@@ -2017,13 +2016,6 @@ function renderImportDrafts() {
     confirmedLabel.append(confirmed, draft.committed_id ? ` 已入库：${draft.committed_id}` : " 内容已核对");
     header.append(title, confirmedLabel);
     card.appendChild(header);
-
-    if ((draft.warnings || []).length) {
-      const warning = document.createElement("div");
-      warning.className = "draft-warning";
-      warning.textContent = draft.warnings.join("；");
-      card.appendChild(warning);
-    }
 
     const metadataGrid = document.createElement("div");
     metadataGrid.className = "grid";
@@ -2079,17 +2071,17 @@ function renderImportDrafts() {
     question.className = "import-question-text";
     const questionPreview = document.createElement("div");
     questionPreview.className = "content-preview import-content-preview";
-    const updateQuestionPreview = () =>
-      renderRichPreview(draft.question, questionPreview, "题目排版预览");
-    bindDraftField(question, draft, "question", (value) => value, updateQuestionPreview);
+    const answerPreview = document.createElement("div");
+    answerPreview.className = "content-preview import-content-preview compact-preview";
+    const analysisPreview = document.createElement("div");
+    analysisPreview.className = "content-preview import-content-preview compact-preview";
+    const updateFullDraftPreview = () => {
+      renderRichPreview(draft.question, questionPreview, "暂无题目内容");
+      renderRichPreview(draft.answer, answerPreview, "暂无答案");
+      renderRichPreview(draft.analysis, analysisPreview, "暂无解析");
+    };
+    bindDraftField(question, draft, "question", (value) => value, updateFullDraftPreview);
     card.appendChild(draftLabel("题目正文", question));
-    const previewDetails = document.createElement("details");
-    previewDetails.className = "draft-preview-details";
-    const previewSummary = document.createElement("summary");
-    previewSummary.textContent = "查看公式和图片效果";
-    previewDetails.append(previewSummary, questionPreview);
-    card.appendChild(previewDetails);
-    updateQuestionPreview();
 
     const answerAnalysis = document.createElement("textarea");
     answerAnalysis.rows = 9;
@@ -2097,8 +2089,31 @@ function renderImportDrafts() {
     answerAnalysis.placeholder = "【答案】…\n\n【解析】…";
     answerAnalysis.addEventListener("input", () => {
       updateCombinedAnswerAnalysis(draft, answerAnalysis.value);
+      updateFullDraftPreview();
     });
     card.appendChild(draftLabel("答案与解析", answerAnalysis));
+
+    const previewDetails = document.createElement("details");
+    previewDetails.className = "draft-preview-details";
+    const previewSummary = document.createElement("summary");
+    previewSummary.textContent = "查看完整排版效果";
+    const previewBody = document.createElement("div");
+    previewBody.className = "draft-full-preview";
+    for (const [label, preview] of [
+      ["题目", questionPreview],
+      ["答案", answerPreview],
+      ["解析", analysisPreview],
+    ]) {
+      const section = document.createElement("section");
+      section.className = "draft-preview-section";
+      const heading = document.createElement("strong");
+      heading.textContent = label;
+      section.append(heading, preview);
+      previewBody.appendChild(section);
+    }
+    previewDetails.append(previewSummary, previewBody);
+    card.appendChild(previewDetails);
+    updateFullDraftPreview();
 
     if ((draft.images || []).length) {
       const images = document.createElement("div");
