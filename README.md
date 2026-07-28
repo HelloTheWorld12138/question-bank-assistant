@@ -101,6 +101,9 @@ Windows 构建会生成 `dist/题搭子-Setup-版本号.exe` 安装包；它会�
 
 首次安装时会检查 Microsoft Edge WebView2 Runtime；若电脑尚未安装，安装器会联网下载安装。
 
+推送与 `APP_VERSION` 一致的标签（例如 `v1.0.1`）会由 GitHub Actions 自动构建 Intel Mac、
+Apple 芯片 Mac 和 Windows 安装包，并发布到 GitHub Release。
+
 更完整的环境变量、可选工具和发布说明见
 [开发说明](./docs/开发说明.md)。
 

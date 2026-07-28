@@ -16,5 +16,6 @@ jobs:
         run: scripts/build_windows.ps1
       - uses: actions/upload-artifact@v7
         with:
-          name: 题搭子-Windows
-          path: dist/题搭子-Windows.zip
+          name: 题搭子-Windows-Setup
+          path: dist/题搭子-Setup-*.exe
+          if-no-files-found: error
