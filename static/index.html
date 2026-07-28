@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.6.5" />
+    <link rel="stylesheet" href="./style.css?v=0.6.6" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -118,7 +118,7 @@
           </div>
         </div>
         <div class="notice">
-          上传题目文件，也可同时上传答案文件。系统会先切成草稿；
+          上传题目文件，也可同时上传教师版答案与解析。系统会自动去掉重复题目，并读取难度、来源和知识点；
           请逐题核对，只有勾选的题目才会入库。
         </div>
         <div class="grid">
@@ -127,7 +127,7 @@
             <input id="batchImportFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
           </label>
           <label class="wide">
-            答案文件（可不选）
+            答案与解析文件（可不选）
             <input id="batchAnswerFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
           </label>
         </div>
@@ -645,7 +645,29 @@
       </form>
     </dialog>
 
+    <dialog id="imageEditorDialog" class="edit-dialog image-editor-dialog">
+      <div class="image-editor-shell">
+        <div class="dialog-header">
+          <div>
+            <div id="imageEditorTitle" class="minor-title">调整图片</div>
+            <div id="imageEditorHint" class="hint">拖动框线选择保留范围。</div>
+          </div>
+          <button type="button" id="closeImageEditorBtn" class="ghost compact">取消</button>
+        </div>
+        <div class="image-editor-canvas-wrap">
+          <canvas id="imageEditorCanvas" aria-label="图片裁剪与透视校正区域"></canvas>
+        </div>
+        <div class="image-editor-help">
+          裁剪：拖出要保留的区域。透视：拖动四个圆点，使它们落在纸张或题图的四角。
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="resetImageSelectionBtn" class="secondary">重新选择</button>
+          <button type="button" id="applyImageEditBtn">应用</button>
+        </div>
+      </div>
+    </dialog>
+
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.5"></script>
+    <script src="./app.js?v=0.6.6"></script>
   </body>
 </html>

@@ -137,6 +137,8 @@ def finalize_draft_images(
         if not source.is_file() or source.suffix.lower() not in config.IMAGE_EXTENSIONS:
             continue
         relative = source.relative_to(draft_dir).as_posix()
+        if any(part.startswith(".") for part in source.relative_to(draft_dir).parts):
+            continue
         if source.name not in referenced_names and relative not in referenced_names:
             continue
         filename = _image_target_name(question_id, image_count, source)

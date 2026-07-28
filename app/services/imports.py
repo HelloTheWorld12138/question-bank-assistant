@@ -26,6 +26,11 @@ QUESTION_START_RE = re.compile(
     r"(?m)^[ \t]*(?:第[ \t]*)?(?P<number>\d{1,3})[ \t]*(?:题|[.．、)）])[ \t]*"
 )
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+ANSWER_FIELD_RE = re.compile(
+    r"(?m)^[ \t]*(?:\*\*)?(?:【[ \t]*)?(?P<label>"
+    r"答案|难度(?:系数)?|来源|知识点|详解|解析|年份|题型|板块|主类型|类型"
+    r")[ \t]*(?:】|[:：])(?:\*\*)?[ \t]*"
+)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 _OCR_LOCK = threading.Lock()
 _OCR_ENGINE: Any = None
@@ -47,18 +52,72 @@ def split_numbered_content(text: str) -> list[dict[str, str]]:
     return chunks
 
 
-def _answer_content(content: str) -> tuple[str, str]:
+def _split_metadata_values(value: str) -> list[str]:
+    return [
+        item.strip()
+        for item in re.split(r"[\n,，、;；]+", str(value or ""))
+        if item.strip()
+    ]
+
+
+def _answer_content(content: str) -> dict[str, Any]:
+    """Read a teacher-edition answer block without copying its repeated question."""
+    matches = list(ANSWER_FIELD_RE.finditer(str(content or "")))
+    if matches:
+        fields: dict[str, list[str]] = {}
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            label = match.group("label")
+            value = content[match.end() : end].strip()
+            fields.setdefault(label, []).append(value)
+        answer = "\n\n".join(item for item in fields.get("答案", []) if item).strip()
+        analysis = "\n\n".join(
+            item
+            for label in ("详解", "解析")
+            for item in fields.get(label, [])
+            if item
+        ).strip()
+        knowledge_points = [
+            item
+            for value in fields.get("知识点", [])
+            for item in _split_metadata_values(value)
+        ]
+        extra_types = [
+            item
+            for value in fields.get("类型", [])
+            for item in _split_metadata_values(value)
+        ]
+        return {
+            "answer": answer,
+            "analysis": analysis,
+            "answer_format_recognized": True,
+            "difficulty": "\n".join(fields.get("难度", fields.get("难度系数", []))).strip(),
+            "source": "\n".join(fields.get("来源", [])).strip(),
+            "year": "\n".join(fields.get("年份", [])).strip(),
+            "knowledge_points": list(dict.fromkeys(knowledge_points)),
+            "extra_types": list(dict.fromkeys(extra_types)),
+            "question_type": "\n".join(fields.get("题型", [])).strip(),
+            "block": "\n".join(fields.get("板块", [])).strip(),
+            "main_type": "\n".join(fields.get("主类型", [])).strip(),
+        }
     parsed = documents.parse_question_sections(content)
     if parsed["answer"] or parsed["analysis"]:
         answer = parsed["answer"] or parsed["question"]
-        return answer.strip(), parsed["analysis"].strip()
-    return content.strip(), ""
+        return {
+            "answer": answer.strip(),
+            "analysis": parsed["analysis"].strip(),
+            "answer_format_recognized": True,
+        }
+    plain = str(content or "").strip()
+    if len(plain) <= 160 and not MARKDOWN_IMAGE_RE.search(plain):
+        return {"answer": plain, "analysis": "", "answer_format_recognized": True}
+    return {"answer": "", "analysis": "", "answer_format_recognized": False}
 
 
 def match_answer_segments(
     questions_segments: list[dict[str, str]],
     answer_segments: list[dict[str, str]],
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     answers_by_number = {
         item["original_number"]: item
         for item in answer_segments
@@ -73,10 +132,14 @@ def match_answer_segments(
             answer_item = answer_segments[index]
             match_kind = "position"
         if answer_item:
-            answer, analysis = _answer_content(answer_item["content"])
+            parsed = _answer_content(answer_item["content"])
         else:
-            answer, analysis, match_kind = "", "", "unmatched"
-        matched.append({**question, "answer": answer, "analysis": analysis, "answer_match": match_kind})
+            parsed, match_kind = {
+                "answer": "",
+                "analysis": "",
+                "answer_format_recognized": False,
+            }, "unmatched"
+        matched.append({**question, **parsed, "answer_match": match_kind})
     return matched
 
 
@@ -539,13 +602,23 @@ def _drafts_from_docx(
     return drafts, dict(converted.get("mathtype") or {})
 
 
-def _plain_segments_from_path(path: Path, work_dir: Path) -> list[dict[str, str]]:
+def _plain_segments_from_path(
+    path: Path,
+    work_dir: Path,
+) -> tuple[list[dict[str, str]], Path | None, dict[str, Path]]:
     suffix = path.suffix.lower()
+    source_dir: Path | None = None
+    assets: dict[str, Path] = {}
     if suffix == ".docx":
         converted = documents.convert_docx_path(path)
         text = converted["markdown"]
-        if converted.get("draft_id"):
-            shutil.rmtree(config.DRAFT_ASSETS_DIR / converted["draft_id"], ignore_errors=True)
+        original_draft_id = str(converted.get("draft_id") or "")
+        if original_draft_id:
+            source_dir = config.DRAFT_ASSETS_DIR / original_draft_id
+            assets = {
+                item["name"]: source_dir / item["relative_path"]
+                for item in converted.get("images", [])
+            }
     elif suffix == ".pdf":
         pages = _extract_pdf_pages(path, work_dir)
         text = "\n\n".join(page["markdown"] for page in pages)
@@ -555,21 +628,90 @@ def _plain_segments_from_path(path: Path, work_dir: Path) -> list[dict[str, str]
         text = MARKDOWN_IMAGE_RE.sub("", pages[0]["markdown"])
     else:
         raise AppError("答案文件格式不受支持。")
-    return split_numbered_content(text)
+    return split_numbered_content(text), source_dir, assets
 
 
-def _apply_answers(drafts: list[dict[str, Any]], segments: list[dict[str, str]]) -> None:
+def _attach_answer_assets(
+    draft: dict[str, Any],
+    parsed: dict[str, Any],
+    source_dir: Path | None,
+    assets: dict[str, Path],
+) -> None:
+    if source_dir is None or not assets:
+        return
+    fields = ("answer", "analysis")
+    urls = list(
+        dict.fromkeys(
+            match.group(1)
+            for field in fields
+            for match in MARKDOWN_IMAGE_RE.finditer(str(parsed.get(field) or ""))
+        )
+    )
+    resolved = [(url, _source_asset(url, source_dir, assets)) for url in urls]
+    resolved = [(url, path) for url, path in resolved if path is not None]
+    if not resolved:
+        return
+    if not draft.get("draft_id"):
+        draft["draft_id"] = str(uuid.uuid4())
+    draft_dir = config.DRAFT_ASSETS_DIR / str(draft["draft_id"])
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    existing_names = {str(item.get("name") or "") for item in draft.get("images", [])}
+    for url, source in resolved:
+        name = source.name
+        counter = 2
+        while name in existing_names or (draft_dir / name).exists():
+            name = f"{source.stem}_answer_{counter}{source.suffix.lower()}"
+            counter += 1
+        existing_names.add(name)
+        shutil.copy2(source, draft_dir / name)
+        new_url = f"/draft-assets/{draft['draft_id']}/{name}"
+        for field in fields:
+            parsed[field] = str(parsed.get(field) or "").replace(url, new_url)
+        draft.setdefault("images", []).append({"name": name, "url": new_url})
+
+
+def _apply_answers(
+    drafts: list[dict[str, Any]],
+    segments: list[dict[str, str]],
+    *,
+    source_dir: Path | None = None,
+    assets: dict[str, Path] | None = None,
+) -> None:
     question_segments = [
         {"original_number": draft["original_number"], "content": draft["question"]}
         for draft in drafts
     ]
     matched = match_answer_segments(question_segments, segments)
     for draft, answer in zip(drafts, matched):
+        _attach_answer_assets(draft, answer, source_dir, assets or {})
         if answer["answer"]:
             draft["answer"] = answer["answer"]
         if answer["analysis"]:
             draft["analysis"] = answer["analysis"]
+        for field in ("difficulty", "year", "source"):
+            if str(answer.get(field) or "").strip():
+                draft[field] = str(answer[field]).strip()
+        knowledge_points = [
+            *draft.get("knowledge_points", []),
+            *answer.get("knowledge_points", []),
+        ]
+        draft["knowledge_points"] = list(
+            dict.fromkeys(str(item).strip() for item in knowledge_points if str(item).strip())
+        )
+        extra_types = [*draft.get("extra_types", []), *answer.get("extra_types", [])]
+        draft["extra_types"] = list(
+            dict.fromkeys(str(item).strip() for item in extra_types if str(item).strip())
+        )
+        if answer.get("question_type") in config.QUESTION_TYPES:
+            draft["question_type"] = answer["question_type"]
+        if answer.get("block"):
+            draft["block_code"] = _block_code(answer["block"])
+        if answer.get("main_type"):
+            draft["type_code"] = _type_code(answer["main_type"])
         draft["answer_match"] = answer["answer_match"]
+        if not answer.get("answer_format_recognized") and answer["answer_match"] != "unmatched":
+            draft["warnings"].append("未识别到答案或解析栏目，请手动填写。")
+            draft["requires_attention"] = True
         if answer["answer_match"] == "position":
             draft["warnings"].append("答案按顺序匹配，请核对原始题号。")
             draft["requires_attention"] = True
@@ -667,8 +809,20 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
         answer_path = input_dir / f"answers{answer_suffix}"
         await _save_upload(answer_file, answer_path)
         answer_name = answer_file.filename
-        answer_segments = _plain_segments_from_path(answer_path, work_dir / "answers")
-        _apply_answers(drafts, answer_segments)
+        answer_segments, answer_source_dir, answer_assets = _plain_segments_from_path(
+            answer_path,
+            work_dir / "answers",
+        )
+        try:
+            _apply_answers(
+                drafts,
+                answer_segments,
+                source_dir=answer_source_dir,
+                assets=answer_assets,
+            )
+        finally:
+            if answer_source_dir is not None:
+                shutil.rmtree(answer_source_dir, ignore_errors=True)
 
     task = {
         "id": task_id,
@@ -815,6 +969,9 @@ def process_draft_image(
     if not path.exists():
         raise NotFoundError("草稿图片文件不存在。")
     action = str(payload.get("action") or "enhance")
+    draft_dir = path.parent
+    original_path = draft_dir / ".originals" / image["name"]
+    before_enhance_path = draft_dir / ".before-enhance" / image["name"]
     if action == "delete":
         raw_url = str(image.get("url") or f"/draft-assets/{draft['draft_id']}/{image['name']}")
         for field in ("question", "answer", "analysis", "remarks"):
@@ -830,20 +987,54 @@ def process_draft_image(
         draft["formula_image_names"] = [
             item for item in draft.get("formula_image_names", []) if item != image["name"]
         ]
+        original_path.unlink(missing_ok=True)
+        before_enhance_path.unlink(missing_ok=True)
         draft["confirmed"] = False
         task["updated_at"] = datetime.now().astimezone().isoformat()
         save_import_task(task)
         return {"deleted": True, "name": image["name"]}
-    rotation = {"rotate_left": -90, "rotate_right": 90}.get(action, float(payload.get("rotation") or 0))
-    result = preprocess_image(
-        path,
-        path,
-        rotation=rotation,
-        crop=payload.get("crop") if action == "crop" else None,
-        perspective=payload.get("perspective") if action == "perspective" else None,
-        enhance=action == "enhance",
-    )
+
+    if action not in {"rotate_left", "rotate_right", "crop", "perspective", "enhance", "reset"}:
+        raise AppError("未知的图片处理方式。")
+    if not original_path.exists():
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, original_path)
+
+    if action == "reset":
+        shutil.copy2(original_path, path)
+        before_enhance_path.unlink(missing_ok=True)
+        image["enhanced"] = False
+        with Image.open(path) as restored:
+            result = {"width": restored.width, "height": restored.height}
+    elif action == "enhance" and image.get("enhanced"):
+        if before_enhance_path.exists():
+            shutil.copy2(before_enhance_path, path)
+        else:
+            shutil.copy2(original_path, path)
+        before_enhance_path.unlink(missing_ok=True)
+        image["enhanced"] = False
+        with Image.open(path) as restored:
+            result = {"width": restored.width, "height": restored.height}
+    elif action == "enhance":
+        before_enhance_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, before_enhance_path)
+        result = preprocess_image(path, path, enhance=True)
+        image["enhanced"] = True
+    else:
+        rotation = {"rotate_left": -90, "rotate_right": 90}.get(
+            action,
+            float(payload.get("rotation") or 0),
+        )
+        process_kwargs = {
+            "rotation": rotation,
+            "crop": payload.get("crop") if action == "crop" else None,
+            "perspective": payload.get("perspective") if action == "perspective" else None,
+        }
+        result = preprocess_image(path, path, **process_kwargs)
+        if image.get("enhanced") and before_enhance_path.exists():
+            preprocess_image(before_enhance_path, before_enhance_path, **process_kwargs)
     image["url"] = f"/draft-assets/{draft['draft_id']}/{image['name']}?v={uuid.uuid4().hex[:8]}"
+    draft["confirmed"] = False
     task["updated_at"] = datetime.now().astimezone().isoformat()
     save_import_task(task)
     return {"image": image, **result}

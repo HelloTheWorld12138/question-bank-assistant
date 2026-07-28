@@ -28,6 +28,113 @@ def test_split_numbered_questions_and_match_answers():
     assert all(item["answer_match"] == "exact" for item in matched)
 
 
+def test_teacher_answer_sections_remove_repeated_question_and_read_metadata():
+    questions = imports.split_numbered_content("1. 原题正文\nA. 选项一\nB. 选项二")
+    answers = imports.split_numbered_content(
+        "1. 原题正文\nA. 选项一\nB. 选项二\n\n"
+        "【答案】B\n\n"
+        "【难度】0.65\n\n"
+        "【来源】高三联考\n\n"
+        "【知识点】圆锥摆问题、牛顿第二定律\n\n"
+        "【详解】只保留这一段解析。"
+    )
+
+    matched = imports.match_answer_segments(questions, answers)
+
+    assert matched[0]["answer"] == "B"
+    assert matched[0]["analysis"] == "只保留这一段解析。"
+    assert "原题正文" not in matched[0]["answer"]
+    assert "原题正文" not in matched[0]["analysis"]
+    assert matched[0]["difficulty"] == "0.65"
+    assert matched[0]["source"] == "高三联考"
+    assert matched[0]["knowledge_points"] == ["圆锥摆问题", "牛顿第二定律"]
+
+
+def test_unrecognized_long_answer_layout_is_left_for_manual_review():
+    questions = imports.split_numbered_content("1. 原题正文")
+    answers = imports.split_numbered_content("1. " + "未标明栏目且结构不确定。" * 20)
+
+    matched = imports.match_answer_segments(questions, answers)
+
+    assert matched[0]["answer"] == ""
+    assert matched[0]["analysis"] == ""
+    assert matched[0]["answer_format_recognized"] is False
+
+
+def test_apply_teacher_answer_metadata_and_analysis_image(isolated_data, tmp_path):
+    answer_assets = tmp_path / "answer-assets"
+    answer_assets.mkdir()
+    analysis_image = answer_assets / "analysis.png"
+    Image.new("RGB", (60, 40), "white").save(analysis_image)
+    drafts = [
+        {
+            "id": "draft-1",
+            "original_number": "1",
+            "question": "原题正文",
+            "answer": "",
+            "analysis": "",
+            "difficulty": "",
+            "year": "",
+            "source": "题目文件.docx",
+            "knowledge_points": [],
+            "extra_types": [],
+            "question_type": "选择题",
+            "block_code": "ZH",
+            "type_code": "JD",
+            "warnings": [],
+            "requires_attention": False,
+            "draft_id": "",
+            "images": [],
+        }
+    ]
+    segments = imports.split_numbered_content(
+        "1. 原题正文\n"
+        "【答案】A\n"
+        "【难度】0.7\n"
+        "【来源】教师版试卷\n"
+        "【知识点】向心力、圆锥摆\n"
+        "【详解】受力图如下：![](/draft-assets/source/media/analysis.png)"
+    )
+
+    imports._apply_answers(
+        drafts,
+        segments,
+        source_dir=answer_assets,
+        assets={"analysis.png": analysis_image},
+    )
+
+    draft = drafts[0]
+    assert draft["answer"] == "A"
+    assert draft["difficulty"] == "0.7"
+    assert draft["source"] == "教师版试卷"
+    assert draft["knowledge_points"] == ["向心力", "圆锥摆"]
+    assert "/draft-assets/source/" not in draft["analysis"]
+    assert draft["images"][0]["name"] == "analysis.png"
+    assert (config.DRAFT_ASSETS_DIR / draft["draft_id"] / "analysis.png").is_file()
+    draft.update({"confirmed": True, "remarks": ""})
+    task = {
+        "id": "a7e7e03f-e1d4-46a0-9864-4c1088ec4ed7",
+        "status": "待审核",
+        "source": "题目文件.docx",
+        "drafts": drafts,
+    }
+    imports.save_import_task(task)
+
+    result = asyncio.run(
+        imports.commit_import_task(
+            task["id"],
+            {"drafts": drafts, "selected_ids": ["draft-1"]},
+        )
+    )
+
+    metadata, sections = storage.read_question(result["created"][0]["id"])
+    assert metadata["难度系数"] == "0.7"
+    assert metadata["知识点"] == ["向心力", "圆锥摆"]
+    assert sections["答案"] == "A"
+    assert "../assets/" in sections["解析"]
+    assert (config.ASSETS_DIR / metadata["图片"][0]).is_file()
+
+
 def test_image_preprocessing_rotation_crop_and_enhance(tmp_path):
     source = tmp_path / "source.png"
     target = tmp_path / "target.png"
@@ -44,6 +151,48 @@ def test_image_preprocessing_rotation_crop_and_enhance(tmp_path):
     assert target.exists()
     assert result["width"] == 48
     assert result["height"] == 80
+
+
+def test_draft_image_enhancement_can_be_cancelled(isolated_data):
+    task_id = "3e759d70-ebc7-460d-b126-af0aa6dfdc20"
+    draft_asset_id = "4d25d712-229d-4ced-9911-d8551f4efb3d"
+    draft_dir = config.DRAFT_ASSETS_DIR / draft_asset_id
+    draft_dir.mkdir(parents=True)
+    image_path = draft_dir / "photo.png"
+    image = Image.new("RGB", (80, 50), "#b9b9b9")
+    for x in range(20, 60):
+        for y in range(15, 35):
+            image.putpixel((x, y), (30, 30, 30))
+    image.save(image_path, format="PNG")
+    original = image_path.read_bytes()
+    task = {
+        "id": task_id,
+        "status": "待审核",
+        "drafts": [
+            {
+                "id": "draft-1",
+                "question": f"题图 ![](/draft-assets/{draft_asset_id}/photo.png)",
+                "answer": "",
+                "analysis": "",
+                "remarks": "",
+                "draft_id": draft_asset_id,
+                "images": [{"name": "photo.png", "url": f"/draft-assets/{draft_asset_id}/photo.png"}],
+                "formula_image_names": [],
+                "confirmed": True,
+            }
+        ],
+    }
+    imports.save_import_task(task)
+
+    imports.process_draft_image(task_id, "draft-1", "photo.png", {"action": "enhance"})
+    enhanced = imports.load_import_task(task_id)["drafts"][0]["images"][0]
+    assert enhanced["enhanced"] is True
+    assert image_path.read_bytes() != original
+
+    imports.process_draft_image(task_id, "draft-1", "photo.png", {"action": "enhance"})
+    restored = imports.load_import_task(task_id)["drafts"][0]["images"][0]
+    assert restored["enhanced"] is False
+    assert image_path.read_bytes() == original
 
 
 def test_digital_pdf_creates_review_drafts(isolated_data):

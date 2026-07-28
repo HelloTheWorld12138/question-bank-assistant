@@ -1050,6 +1050,49 @@ td:nth-child(2) {
   background: #f4f6f8;
 }
 
+.import-image-card .action-group {
+  align-items: center;
+}
+
+.image-editor-dialog {
+  width: min(1040px, calc(100% - 28px));
+}
+
+.image-editor-shell {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.image-editor-canvas-wrap {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background:
+    linear-gradient(45deg, #eef2f4 25%, transparent 25%),
+    linear-gradient(-45deg, #eef2f4 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef2f4 75%),
+    linear-gradient(-45deg, transparent 75%, #eef2f4 75%);
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-size: 20px 20px;
+}
+
+#imageEditorCanvas {
+  display: block;
+  max-width: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.image-editor-help {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .recent-imports {
   margin-top: 16px;
   color: #30445b;

@@ -15,6 +15,7 @@ const state = {
   modelProviders: [],
   importTask: null,
   assistantRecommendations: [],
+  imageEditor: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1926,6 +1927,28 @@ function draftLabel(text, control, wide = false) {
   return label;
 }
 
+function combinedAnswerAnalysis(draft) {
+  const parts = [];
+  const answer = normalizeLineBreaks(draft.answer || "").trim();
+  const analysis = normalizeLineBreaks(draft.analysis || "").trim();
+  if (answer) parts.push(`【答案】${answer}`);
+  if (analysis) parts.push(`【解析】\n${analysis}`);
+  return parts.join("\n\n");
+}
+
+function updateCombinedAnswerAnalysis(draft, value) {
+  const normalized = normalizeLineBreaks(value || "").trim();
+  const answerMatch = normalized.match(/【\s*答案\s*】([\s\S]*?)(?=【\s*(?:解析|详解)\s*】|$)/);
+  const analysisMatch = normalized.match(/【\s*(?:解析|详解)\s*】([\s\S]*)/);
+  if (answerMatch || analysisMatch) {
+    draft.answer = normalizeLineBreaks(answerMatch?.[1] || "").trim();
+    draft.analysis = normalizeLineBreaks(analysisMatch?.[1] || "").trim();
+    return;
+  }
+  draft.answer = "";
+  draft.analysis = normalized;
+}
+
 function renderImportDrafts() {
   const holder = $("importDrafts");
   holder.innerHTML = "";
@@ -2037,16 +2060,14 @@ function renderImportDrafts() {
     card.appendChild(previewDetails);
     updateQuestionPreview();
 
-    const answerGrid = document.createElement("div");
-    answerGrid.className = "two-col";
-    const answer = document.createElement("textarea");
-    answer.rows = 5;
-    bindDraftField(answer, draft, "answer");
-    const analysis = document.createElement("textarea");
-    analysis.rows = 5;
-    bindDraftField(analysis, draft, "analysis");
-    answerGrid.append(draftLabel("答案", answer), draftLabel("解析", analysis));
-    card.appendChild(answerGrid);
+    const answerAnalysis = document.createElement("textarea");
+    answerAnalysis.rows = 9;
+    answerAnalysis.value = combinedAnswerAnalysis(draft);
+    answerAnalysis.placeholder = "【答案】…\n\n【解析】…";
+    answerAnalysis.addEventListener("input", () => {
+      updateCombinedAnswerAnalysis(draft, answerAnalysis.value);
+    });
+    card.appendChild(draftLabel("答案与解析", answerAnalysis));
 
     if ((draft.images || []).length) {
       const images = document.createElement("div");
@@ -2068,9 +2089,10 @@ function renderImportDrafts() {
         for (const [action, label] of [
           ["rotate_left", "左转"],
           ["rotate_right", "右转"],
-          ["enhance", "去阴影增强"],
+          ["enhance", image.enhanced ? "取消去阴影" : "去阴影"],
           ["crop", "裁剪"],
           ["perspective", "透视校正"],
+          ["reset", "恢复原图"],
           ["delete", "移除"],
         ]) {
           const button = document.createElement("button");
@@ -2080,6 +2102,10 @@ function renderImportDrafts() {
           button.disabled = isMetafile && action !== "delete";
           button.addEventListener("click", () => {
             if (action === "delete" && !confirm("移除这张图片吗？")) return;
+            if (action === "crop" || action === "perspective") {
+              openImageEditor(draft.id, image, action);
+              return;
+            }
             processImportImage(draft.id, image.name, action);
           });
           buttons.appendChild(button);
@@ -2200,7 +2226,7 @@ async function analyzeImportFile() {
   }
 }
 
-async function loadImportTask(taskId) {
+async function loadImportTask(taskId, { scrollToCenter = true } = {}) {
   const response = await fetch(`/api/import/tasks/${encodeURIComponent(taskId)}`);
   let data = await response.json();
   if (!response.ok) {
@@ -2227,7 +2253,9 @@ async function loadImportTask(taskId) {
     (conversion.converted ? ` 已补充处理 ${conversion.converted} 张旧版图片。` : "") +
     (conversion.failed.length ? ` 仍有 ${conversion.failed.length} 张需人工检查。` : "");
   renderImportDrafts();
-  document.querySelector(".import-center")?.scrollIntoView({ behavior: "smooth" });
+  if (scrollToCenter) {
+    document.querySelector(".import-center")?.scrollIntoView({ behavior: "smooth" });
+  }
 }
 
 async function saveImportDrafts({ quiet = false } = {}) {
@@ -2309,31 +2337,26 @@ async function splitImportDraft(draftId, position) {
   renderImportDrafts();
 }
 
-async function processImportImage(draftId, imageName, action) {
-  let payload = { action };
-  if (action === "crop") {
-    const raw = prompt("输入保留范围：左,上,右,下（百分比），例如 5,5,95,95", "5,5,95,95");
-    if (!raw) return;
-    const values = raw.split(/[,，]/).map((item) => Number(item.trim()) / 100);
-    if (values.length !== 4 || values.some((item) => !Number.isFinite(item))) {
-      alert("裁剪范围格式不正确。");
+function captureDraftViewport(draftId) {
+  const card = document.querySelector(`[data-draft-id="${CSS.escape(draftId)}"]`);
+  return { draftId, top: card?.getBoundingClientRect().top ?? 0, scrollY: window.scrollY };
+}
+
+function restoreDraftViewport(anchor) {
+  requestAnimationFrame(() => {
+    const card = document.querySelector(`[data-draft-id="${CSS.escape(anchor.draftId)}"]`);
+    if (!card) {
+      window.scrollTo({ top: anchor.scrollY, behavior: "instant" });
       return;
     }
-    payload.crop = { left: values[0], top: values[1], right: values[2], bottom: values[3] };
-  }
-  if (action === "perspective") {
-    const raw = prompt(
-      "输入左上、右上、右下、左下四点的 x,y 百分比，例如 2,3;98,2;97,98;3,97",
-      "2,3;98,2;97,98;3,97",
-    );
-    if (!raw) return;
-    const corners = raw.split(";").map((point) => point.split(/[,，]/).map((item) => Number(item.trim()) / 100));
-    if (corners.length !== 4 || corners.some((point) => point.length !== 2 || point.some((item) => !Number.isFinite(item)))) {
-      alert("透视角点格式不正确。");
-      return;
-    }
-    payload.perspective = corners;
-  }
+    const difference = card.getBoundingClientRect().top - anchor.top;
+    window.scrollBy({ top: difference, behavior: "instant" });
+  });
+}
+
+async function processImportImage(draftId, imageName, action, changes = {}) {
+  const payload = { action, ...changes };
+  const anchor = captureDraftViewport(draftId);
   const response = await fetch(
     `/api/import/tasks/${encodeURIComponent(state.importTask.id)}/drafts/${encodeURIComponent(draftId)}` +
       `/images/${encodeURIComponent(imageName)}/process`,
@@ -2348,7 +2371,185 @@ async function processImportImage(draftId, imageName, action) {
     alert(data.detail || "图片处理失败");
     return;
   }
-  await loadImportTask(state.importTask.id);
+  await loadImportTask(state.importTask.id, { scrollToCenter: false });
+  restoreDraftViewport(anchor);
+}
+
+function imageEditorDefaults(mode) {
+  if (mode === "crop") {
+    return { crop: { left: 0.05, top: 0.05, right: 0.95, bottom: 0.95 } };
+  }
+  return {
+    points: [
+      [0.04, 0.04],
+      [0.96, 0.04],
+      [0.96, 0.96],
+      [0.04, 0.96],
+    ],
+  };
+}
+
+function drawImageEditor() {
+  const editor = state.imageEditor;
+  if (!editor?.image?.complete) return;
+  const canvas = $("imageEditorCanvas");
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(editor.image, 0, 0, canvas.width, canvas.height);
+  context.save();
+  context.lineWidth = 3;
+  context.strokeStyle = "#10a37f";
+  context.fillStyle = "rgba(16, 163, 127, 0.18)";
+  if (editor.mode === "crop") {
+    const crop = editor.crop;
+    const left = crop.left * canvas.width;
+    const top = crop.top * canvas.height;
+    const width = (crop.right - crop.left) * canvas.width;
+    const height = (crop.bottom - crop.top) * canvas.height;
+    context.fillStyle = "rgba(16, 24, 32, 0.55)";
+    context.beginPath();
+    context.rect(0, 0, canvas.width, canvas.height);
+    context.rect(left, top, width, height);
+    context.fill("evenodd");
+    context.strokeRect(left, top, width, height);
+  } else {
+    const points = editor.points.map(([x, y]) => [x * canvas.width, y * canvas.height]);
+    context.beginPath();
+    points.forEach(([x, y], index) => {
+      if (index) context.lineTo(x, y);
+      else context.moveTo(x, y);
+    });
+    context.closePath();
+    context.fill();
+    context.stroke();
+    for (const [x, y] of points) {
+      context.beginPath();
+      context.arc(x, y, 9, 0, Math.PI * 2);
+      context.fillStyle = "#fff";
+      context.fill();
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function imageEditorPosition(event) {
+  const canvas = $("imageEditorCanvas");
+  const bounds = canvas.getBoundingClientRect();
+  return [
+    Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+    Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+  ];
+}
+
+function resetImageEditorSelection() {
+  const editor = state.imageEditor;
+  if (!editor) return;
+  Object.assign(editor, imageEditorDefaults(editor.mode));
+  editor.dragging = null;
+  drawImageEditor();
+}
+
+function openImageEditor(draftId, image, mode) {
+  const source = String(image.url || "").split("?", 1)[0];
+  const editorImage = new Image();
+  state.imageEditor = {
+    draftId,
+    imageName: image.name,
+    mode,
+    image: editorImage,
+    dragging: null,
+    ...imageEditorDefaults(mode),
+  };
+  $("imageEditorTitle").textContent = mode === "crop" ? "裁剪图片" : "校正透视";
+  $("imageEditorHint").textContent =
+    mode === "crop"
+      ? "在图片上拖出需要保留的区域。"
+      : "拖动四个圆点，对准纸张或题图的四个角。";
+  editorImage.addEventListener("load", () => {
+    const maxWidth = Math.min(920, Math.max(320, window.innerWidth - 100));
+    const maxHeight = Math.min(620, Math.max(280, window.innerHeight - 260));
+    const scale = Math.min(maxWidth / editorImage.naturalWidth, maxHeight / editorImage.naturalHeight, 1);
+    const canvas = $("imageEditorCanvas");
+    canvas.width = Math.max(1, Math.round(editorImage.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(editorImage.naturalHeight * scale));
+    drawImageEditor();
+  });
+  editorImage.addEventListener("error", () => {
+    alert("图片预览无法打开，请重新导入这张图片。");
+    $("imageEditorDialog").close();
+  });
+  editorImage.src = `${source}?editor=${Date.now()}`;
+  $("imageEditorDialog").showModal();
+}
+
+function bindImageEditorEvents() {
+  const canvas = $("imageEditorCanvas");
+  canvas.addEventListener("pointerdown", (event) => {
+    const editor = state.imageEditor;
+    if (!editor) return;
+    const point = imageEditorPosition(event);
+    if (editor.mode === "crop") {
+      editor.dragging = { start: point };
+      editor.crop = { left: point[0], top: point[1], right: point[0], bottom: point[1] };
+    } else {
+      let nearest = 0;
+      let distance = Number.POSITIVE_INFINITY;
+      editor.points.forEach(([x, y], index) => {
+        const current = Math.hypot(point[0] - x, point[1] - y);
+        if (current < distance) {
+          nearest = index;
+          distance = current;
+        }
+      });
+      editor.dragging = { pointIndex: nearest };
+      editor.points[nearest] = point;
+    }
+    canvas.setPointerCapture(event.pointerId);
+    drawImageEditor();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    const editor = state.imageEditor;
+    if (!editor?.dragging) return;
+    const point = imageEditorPosition(event);
+    if (editor.mode === "crop") {
+      const [startX, startY] = editor.dragging.start;
+      editor.crop = {
+        left: Math.min(startX, point[0]),
+        top: Math.min(startY, point[1]),
+        right: Math.max(startX, point[0]),
+        bottom: Math.max(startY, point[1]),
+      };
+    } else {
+      editor.points[editor.dragging.pointIndex] = point;
+    }
+    drawImageEditor();
+  });
+  const finish = () => {
+    if (state.imageEditor) state.imageEditor.dragging = null;
+  };
+  canvas.addEventListener("pointerup", finish);
+  canvas.addEventListener("pointercancel", finish);
+  $("closeImageEditorBtn").addEventListener("click", () => $("imageEditorDialog").close());
+  $("resetImageSelectionBtn").addEventListener("click", resetImageEditorSelection);
+  $("applyImageEditBtn").addEventListener("click", async () => {
+    const editor = state.imageEditor;
+    if (!editor) return;
+    let changes;
+    if (editor.mode === "crop") {
+      const crop = editor.crop;
+      if (crop.right - crop.left < 0.02 || crop.bottom - crop.top < 0.02) {
+        alert("保留区域太小，请重新框选。");
+        return;
+      }
+      changes = { crop };
+    } else {
+      changes = { perspective: editor.points };
+    }
+    $("imageEditorDialog").close();
+    await processImportImage(editor.draftId, editor.imageName, editor.mode, changes);
+    state.imageEditor = null;
+  });
 }
 
 function renderModelSettings(data) {
@@ -2563,6 +2764,7 @@ function bindEvents() {
   $("analyzeImportBtn").addEventListener("click", analyzeImportFile);
   $("saveImportDraftsBtn").addEventListener("click", () => saveImportDrafts());
   $("commitImportBtn").addEventListener("click", commitImportDrafts);
+  bindImageEditorEvents();
   renderManualPreviews();
 }
 
