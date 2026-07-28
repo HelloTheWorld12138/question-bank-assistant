@@ -871,7 +871,7 @@ tbody tr:hover {
   background: #f8fbff;
 }
 
-td:nth-child(2) {
+.question-id-cell {
   font-weight: 800;
   color: var(--blue-dark);
   white-space: nowrap;
@@ -1095,6 +1095,13 @@ td:nth-child(2) {
 .filter-panel .grid {
   margin: 0;
   padding: 14px;
+}
+
+.library-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .system-status {
@@ -1332,7 +1339,8 @@ td:nth-child(2) {
   .convert-row,
   .formula-item,
   .maintenance-grid,
-  .assistant-query-row {
+  .assistant-query-row,
+  .library-search-row {
     grid-template-columns: 1fr;
   }
 

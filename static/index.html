@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>高中物理题库助手</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=0.6.8" />
+    <link rel="stylesheet" href="./style.css?v=0.6.9" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -36,7 +36,7 @@
         </button>
         <button type="button" class="module-nav-item" data-module-target="library">
           <span class="module-number">2</span>
-          <span><strong>查看题库</strong><small>查找与管理</small></span>
+          <span><strong>查看题库</strong><small>浏览与修改</small></span>
         </button>
         <button type="button" class="module-nav-item" data-module-target="export">
           <span class="module-number">3</span>
@@ -49,11 +49,11 @@
           <button type="button" class="subtask-nav-item" data-workspace-target="manual">录入单题</button>
         </div>
         <div class="subtask-menu" data-module-menu="library">
-          <button type="button" class="subtask-nav-item" data-workspace-target="search">题库列表</button>
-          <button type="button" class="subtask-nav-item" data-workspace-target="maintenance">题库维护</button>
+          <button type="button" class="subtask-nav-item" data-workspace-target="library">浏览与修改</button>
           <button type="button" class="subtask-nav-item" data-workspace-target="settings">系统设置</button>
         </div>
         <div class="subtask-menu" data-module-menu="export">
+          <button type="button" class="subtask-nav-item" data-workspace-target="select">选择题目</button>
           <button type="button" class="subtask-nav-item" data-workspace-target="export">组卷并导出</button>
         </div>
       </nav>
@@ -64,6 +64,7 @@
         <div class="section-title">
           <h2>批量导入</h2>
           <div class="action-group">
+            <button type="button" id="toggleAllImportDraftsBtn" class="ghost" disabled>全部选中</button>
             <button type="button" id="saveImportDraftsBtn" class="secondary" disabled>保存进度</button>
             <button type="button" id="commitImportBtn" disabled>确认入库</button>
           </div>
@@ -209,16 +210,84 @@
         </div>
       </section>
 
-      <section class="panel workspace-view" data-workspace-view="search">
+      <section class="panel workspace-view" data-workspace-view="library">
         <div class="section-title">
-          <h2>题库列表</h2>
-          <div class="action-group">
-            <button type="button" id="batchEditBtn" class="secondary">修改所选题目</button>
-            <button type="button" id="searchBtn">筛选</button>
+          <h2>浏览与修改</h2>
+          <button type="button" id="librarySearchBtn">查找</button>
+        </div>
+        <div class="library-search-row">
+          <input id="libraryQuery" aria-label="题库关键词" placeholder="输入题号、题目内容或知识点" />
+          <button type="button" id="libraryClearBtn" class="ghost">清空</button>
+        </div>
+        <details class="filter-panel">
+          <summary>更多筛选条件</summary>
+          <div class="grid">
+            <label>
+              板块
+              <select id="libraryBlock"><option value="">全部</option></select>
+            </label>
+            <label>
+              题目特点
+              <select id="libraryType"><option value="">全部</option></select>
+            </label>
+            <label>
+              难度
+              <input id="libraryDifficulty" placeholder="可填 0.63 或 3" />
+            </label>
+            <label>
+              年份
+              <input id="libraryYear" placeholder="例如 2025" />
+            </label>
+            <label>
+              来源
+              <input id="librarySource" placeholder="输入来源关键词" />
+            </label>
+            <label>
+              知识点
+              <input id="libraryKnowledge" placeholder="输入知识点关键词" />
+            </label>
+            <label>
+              题型
+              <select id="libraryQuestionType"><option value="">全部</option></select>
+            </label>
+            <label>
+              排序
+              <select id="librarySort">
+                <option value="id:asc">题号升序</option>
+                <option value="id:desc">题号降序</option>
+                <option value="updated:desc">最近修改</option>
+                <option value="year:desc">年份从新到旧</option>
+                <option value="difficulty:asc">难度从低到高</option>
+                <option value="difficulty:desc">难度从高到低</option>
+              </select>
+            </label>
           </div>
+        </details>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>题号</th>
+                <th>板块</th>
+                <th>类型</th>
+                <th>难度</th>
+                <th>来源</th>
+                <th>题目预览</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="libraryResultsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel workspace-view" data-workspace-view="select">
+        <div class="section-title">
+          <h2>选择题目</h2>
+          <button type="button" id="searchBtn">筛选</button>
         </div>
         <div class="assistant-search">
-          <div class="minor-title">按要求找题</div>
+          <div class="minor-title">按组卷要求找题</div>
           <div class="assistant-query-row">
             <textarea
               id="assistantQuery"
@@ -300,7 +369,6 @@
                 <th>难度</th>
                 <th>来源</th>
                 <th>题目预览</th>
-                <th>操作</th>
               </tr>
             </thead>
             <tbody id="resultsBody"></tbody>
@@ -357,7 +425,7 @@
         </div>
         <div class="minor-title">题目顺序</div>
         <div id="examSelectionList" class="exam-selection-list">
-          <div class="empty">请先到“查看题库”勾选题目。</div>
+          <div class="empty">请先到“选择题目”勾选题目。</div>
         </div>
         <div class="export-row">
           <label class="radio-card"><input type="radio" name="exportMode" value="questions" checked /> 只导出题目</label>
@@ -365,30 +433,6 @@
           <label class="radio-card"><input type="radio" name="exportMode" value="analysis" /> 题目 + 答案 + 解析</label>
         </div>
         <div id="exportResult" class="result-box"></div>
-      </section>
-
-      <section class="panel workspace-view" data-workspace-view="maintenance">
-        <div class="section-title">
-          <h2>题库维护</h2>
-          <button type="button" id="refreshMaintenanceBtn" class="ghost">刷新</button>
-        </div>
-        <div class="maintenance-actions">
-          <button type="button" id="integrityBtn" class="secondary">检查题目和图片</button>
-          <button type="button" id="rebuildIndexBtn" class="secondary">修复题号</button>
-          <button type="button" id="restoreTemplatesBtn" class="secondary">恢复默认模板</button>
-          <button type="button" id="backupBtn">立即备份</button>
-        </div>
-        <div id="maintenanceResult" class="result-box"></div>
-        <div class="maintenance-grid">
-          <div>
-            <div class="minor-title">回收站</div>
-            <div id="trashList" class="maintenance-list"></div>
-          </div>
-          <div>
-            <div class="minor-title">题库备份</div>
-            <div id="backupList" class="maintenance-list"></div>
-          </div>
-        </div>
       </section>
 
       <section class="panel workspace-view" data-workspace-view="settings">
@@ -590,6 +634,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=0.6.8"></script>
+    <script src="./app.js?v=0.6.9"></script>
   </body>
 </html>

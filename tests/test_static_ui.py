@@ -14,11 +14,21 @@ def test_teacher_ui_uses_three_task_modules():
 def test_secondary_tasks_are_grouped_under_their_modules():
     html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
 
-    for task in ("批量导入", "录入单题", "题库列表", "题库维护", "系统设置", "组卷并导出"):
+    for task in ("批量导入", "录入单题", "浏览与修改", "系统设置", "选择题目", "组卷并导出"):
         assert task in html
     assert 'data-module-menu="entry"' in html
     assert 'data-module-menu="library"' in html
     assert 'data-module-menu="export"' in html
+    assert 'data-workspace-view="maintenance"' not in html
+    assert "题库备份" not in html
+
+
+def test_import_review_can_select_all_pending_drafts():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="toggleAllImportDraftsBtn"' in html
+    assert "function toggleAllImportDrafts()" in javascript
 
 
 def test_import_review_uses_one_full_preview_without_confidence_banner():
