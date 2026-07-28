@@ -25,7 +25,7 @@
 
 ### Windows
 
-从 [Releases](../../releases/latest) 下载 `题搭子-Windows.zip`，解压后运行 `题搭子.exe`。
+从 [Releases](../../releases/latest) 下载名称包含 `Windows` 的 `.zip` 文件，解压后运行 `题搭子.exe`。
 
 Windows 构建产物为便携版，无需安装 Python。
 
