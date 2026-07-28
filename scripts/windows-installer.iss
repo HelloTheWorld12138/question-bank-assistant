@@ -27,10 +27,12 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "..\dist\题搭子\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\tools\webview2\MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{autoprograms}\题搭子"; Filename: "{app}\题搭子.exe"
 Name: "{autodesktop}\题搭子"; Filename: "{app}\题搭子.exe"; Tasks: desktopicon
 
 [Run]
+Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "正在检查 Microsoft Edge WebView2 Runtime…"; Flags: waituntilterminated
 Filename: "{app}\题搭子.exe"; Description: "启动题搭子"; Flags: nowait postinstall skipifsilent

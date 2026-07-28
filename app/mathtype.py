@@ -18,6 +18,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app import config
+from app.processes import hidden_process_kwargs
 
 
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -168,6 +169,8 @@ def find_ruby() -> str | None:
     configured = os.getenv("MATHTYPE_RUBY", "").strip()
     if configured and Path(configured).is_file():
         return configured
+    if config.BUNDLED_RUBY.is_file():
+        return str(config.BUNDLED_RUBY)
     return shutil.which("ruby")
 
 
@@ -291,6 +294,7 @@ def convert_ole_objects_to_mathml(
                 errors="replace",
                 check=False,
                 timeout=timeout,
+                **hidden_process_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             message = "旧版公式读取超时" if isinstance(exc, subprocess.TimeoutExpired) else "旧版公式读取组件无法启动"
@@ -347,6 +351,7 @@ def mathml_to_latex(
             errors="replace",
             check=False,
             timeout=timeout,
+            **hidden_process_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return {}, {marker: "公式文本转换组件无法启动" for marker in equations}

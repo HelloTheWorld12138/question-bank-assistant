@@ -11,6 +11,8 @@ $InstallerScript = Join-Path $Root "scripts\windows-installer.iss"
 Set-Location $Root
 & (Join-Path $Root "scripts\download_pandoc.ps1")
 & (Join-Path $Root "scripts\download_officecli.ps1")
+& (Join-Path $Root "scripts\download_ruby.ps1")
+& (Join-Path $Root "scripts\download_webview2.ps1")
 py -3.10 -m venv $Venv
 & $Python -m pip install --upgrade pip
 & $Python -m pip install -r (Join-Path $Root "requirements-build.txt")
@@ -26,13 +28,18 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Build $App
   --add-data "$(Join-Path $Root 'data');data" `
   --add-data "$(Join-Path $Root 'templates');templates" `
   --add-data "$(Join-Path $Root 'tools');tools" `
+  --add-data "$(Join-Path $Root 'third_party\mathtype_to_mathml');third_party/mathtype_to_mathml" `
   --add-data "$(Join-Path $Root 'third_party\OfficeCLI');licenses/OfficeCLI" `
   --collect-all webview `
+  --collect-all keyring `
   --hidden-import app.main `
+  --hidden-import keyring.backends.Windows `
   --hidden-import uvicorn.logging `
   --hidden-import uvicorn.loops.auto `
   --hidden-import uvicorn.protocols.http.auto `
   desktop.py
+
+& (Join-Path $Root "scripts\test_windows_bundle.ps1") -Dist $Dist -AppName $AppName
 
 $AppVersion = & $Python -c "from app.config import APP_VERSION; print(APP_VERSION)"
 $IsccCandidates = @(

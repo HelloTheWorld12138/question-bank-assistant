@@ -26,6 +26,7 @@ STATIC_DIR = ROOT / "static"
 KNOWLEDGE_FILE = ROOT / "data" / "knowledge.yaml"
 LOG_DIR = Path(os.getenv("QUESTION_BANK_LOG_DIR", ROOT / "logs")).expanduser().resolve()
 LOCAL_PANDOC = ROOT / "tools" / "pandoc" / "pandoc.exe"
+BUNDLED_RUBY = ROOT / "tools" / "ruby" / "bin" / "ruby.exe"
 BUNDLED_TEMPLATES_DIR = ROOT / "templates"
 OFFICECLI_VERSION = "1.0.142"
 OFFICECLI_DIR = ROOT / "tools" / "officecli"

@@ -10,6 +10,7 @@ from typing import Any
 
 from app import config
 from app.errors import AppError
+from app.processes import hidden_process_kwargs
 
 
 _OFFICECLI_LOCK = threading.Lock()
@@ -55,6 +56,7 @@ def run_officecli(
                 text=True,
                 timeout=timeout,
                 check=False,
+                **hidden_process_kwargs(),
             )
         except subprocess.TimeoutExpired as exc:
             raise AppError("OfficeCLI 处理超时，已保留 Word 文件。", code="officecli_timeout") from exc

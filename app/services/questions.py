@@ -16,6 +16,7 @@ from app import config, storage
 from app.content import normalize_line_breaks
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, math_delimiter_issue
+from app.processes import hidden_process_kwargs
 from app.services import office
 from app.services.documents import IMAGE_MARKDOWN_RE, find_pandoc, normalize_html_images
 
@@ -725,6 +726,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             capture_output=True,
             text=True,
             check=False,
+            **hidden_process_kwargs(),
         )
         if completed.returncode == 0:
             docx_created = True

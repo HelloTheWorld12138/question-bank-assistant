@@ -16,6 +16,7 @@ from app.agent import opencode_available, run_opencode
 from app.content import normalize_line_breaks
 from app.errors import AppError
 from app.math_ocr import detect_formula_items, formula_ocr_available, has_editable_math
+from app.processes import hidden_process_kwargs
 from app.storage import ensure_dirs
 
 
@@ -260,6 +261,7 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
             capture_output=True,
             text=True,
             check=False,
+            **hidden_process_kwargs(),
         )
         if completed.returncode != 0:
             raise AppError("读取 Word 失败，请确认文件可以正常打开。", status_code=500, code="pandoc_failed")

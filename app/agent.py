@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from app.processes import hidden_process_kwargs
+
 
 SYSTEM_PROMPT = """你是一个本地题库导入助手。请把 Markdown 题目材料拆成结构化 JSON。
 
@@ -92,6 +94,7 @@ def run_opencode(markdown: str, cwd: Path, timeout: int = 90) -> tuple[dict[str,
                 shell=True,
                 timeout=timeout,
                 check=False,
+                **hidden_process_kwargs(),
             )
         else:
             completed = subprocess.run(
@@ -101,6 +104,7 @@ def run_opencode(markdown: str, cwd: Path, timeout: int = 90) -> tuple[dict[str,
                 text=True,
                 timeout=timeout,
                 check=False,
+                **hidden_process_kwargs(),
             )
 
         output = ""

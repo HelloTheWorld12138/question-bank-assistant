@@ -96,7 +96,10 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
 
 Windows 构建会生成 `dist/题搭子-Setup-版本号.exe` 安装包；它会内置 Pandoc，安装后即可
-使用 Word 导入与导出。构建机需安装 [Inno Setup 6](https://jrsoftware.org/isdl.php)。
+使用 Word 导入与导出，并内置 Ruby 和 MathType 转换器以识别旧版 MathType 公式。构建机需安装
+[Inno Setup 6](https://jrsoftware.org/isdl.php)。
+
+首次安装时会检查 Microsoft Edge WebView2 Runtime；若电脑尚未安装，安装器会联网下载安装。
 
 更完整的环境变量、可选工具和发布说明见
 [开发说明](./docs/开发说明.md)。

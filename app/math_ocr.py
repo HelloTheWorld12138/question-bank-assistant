@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from app.processes import hidden_process_kwargs
+
 
 FORMULA_EXTENSIONS = {".wmf", ".emf"}
 RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
@@ -102,6 +104,7 @@ def run_formula_ocr(path: Path, timeout: int = 60) -> tuple[str, str]:
                     shell=True,
                     timeout=timeout,
                     check=False,
+                    **hidden_process_kwargs(),
                 )
             elif shutil.which("latexocr"):
                 completed = subprocess.run(
@@ -110,6 +113,7 @@ def run_formula_ocr(path: Path, timeout: int = 60) -> tuple[str, str]:
                     text=True,
                     timeout=timeout,
                     check=False,
+                    **hidden_process_kwargs(),
                 )
             elif shutil.which("pix2tex"):
                 completed = subprocess.run(
@@ -118,6 +122,7 @@ def run_formula_ocr(path: Path, timeout: int = 60) -> tuple[str, str]:
                     text=True,
                     timeout=timeout,
                     check=False,
+                    **hidden_process_kwargs(),
                 )
             else:
                 return "", "未检测到本地公式 OCR 工具"
