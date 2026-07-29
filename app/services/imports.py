@@ -453,11 +453,11 @@ def _materialize_chunk(
 
 
 def _block_code(value: Any) -> str:
-    text = str(value or "")
+    text = config.canonical_block_name(str(value or "").strip())
     for code, name in config.BLOCKS.items():
         if text in {code, name}:
             return code
-    return "ZH"
+    return config.DEFAULT_BLOCK_CODE
 
 
 def _type_code(value: Any) -> str:
@@ -777,6 +777,8 @@ def normalize_import_task_content(task: dict[str, Any]) -> dict[str, Any]:
     for draft in task.get("drafts", []):
         if not isinstance(draft, dict):
             continue
+        if not str(draft.get("block_code") or "").strip():
+            draft["block_code"] = config.DEFAULT_BLOCK_CODE
         for field in ("question", "answer", "analysis", "remarks"):
             if field in draft:
                 draft[field] = normalize_line_breaks(str(draft.get(field) or ""))

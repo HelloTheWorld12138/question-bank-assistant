@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "题搭子"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -87,6 +87,7 @@ BLOCKS = {
     # CD 仅用于兼容旧题号；新题统一归入 DX（电磁学）。
     "CD": "电磁学",
 }
+DEFAULT_BLOCK_CODE = "LX"
 
 BLOCK_OPTIONS = {
     code: BLOCKS[code]

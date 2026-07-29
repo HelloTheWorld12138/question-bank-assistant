@@ -41,6 +41,7 @@ def options() -> dict[str, Any]:
     storage.ensure_dirs()
     return {
         "blocks": [{"code": code, "name": name} for code, name in config.BLOCK_OPTIONS.items()],
+        "default_block_code": config.DEFAULT_BLOCK_CODE,
         "types": [{"code": code, "name": name} for code, name in config.TYPES.items()],
         "question_types": list(config.QUESTION_TYPES),
         "knowledge_points": knowledge.knowledge_by_block(),

@@ -66,6 +66,15 @@ def test_import_review_can_select_all_pending_drafts():
     assert "function toggleAllImportDrafts()" in javascript
 
 
+def test_import_defaults_to_mechanics_in_manual_and_batch_review():
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    routes = (config.ROOT / "app" / "api" / "routes.py").read_text(encoding="utf-8")
+
+    assert '$("blockCode").value = state.options.default_block_code || "LX"' in javascript
+    assert "draft.block_code = state.options.default_block_code || \"LX\"" in javascript
+    assert '"default_block_code": config.DEFAULT_BLOCK_CODE' in routes
+
+
 def test_teacher_import_fields_enforce_word_and_image_roles():
     html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
     javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
@@ -91,6 +100,9 @@ def test_teacher_import_fields_enforce_word_and_image_roles():
     assert "wordLink.download = exported.exam_docx_filename" in javascript
     assert "fallbackLink.download = exported.exam_md_filename" in javascript
     assert 'webview.settings["ALLOW_DOWNLOADS"] = True' in desktop
+    assert "--font-ui: 14px" in stylesheet
+    assert "button.secondary:disabled" in stylesheet
+    assert "color: #465761" in stylesheet
 
 
 def test_import_review_uses_one_full_preview_without_confidence_banner():
@@ -101,3 +113,43 @@ def test_import_review_uses_one_full_preview_without_confidence_banner():
     assert '["题目", questionPreview]' in javascript
     assert '["答案", answerPreview]' in javascript
     assert '["解析", analysisPreview]' in javascript
+
+
+def test_library_and_export_use_matching_question_filters():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+
+    for suffix in (
+        "Query",
+        "Block",
+        "Type",
+        "Difficulty",
+        "Year",
+        "Source",
+        "Knowledge",
+        "QuestionType",
+        "Sort",
+    ):
+        assert f'id="library{suffix}"' in html
+        assert f'id="search{suffix}"' in html
+    assert 'id="libraryResultsList"' in html
+    assert 'id="resultsList"' in html
+    assert html.count('class="question-filter-panel"') == 2
+
+
+def test_question_catalog_replaces_ai_recommendation_and_table_rows():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    stylesheet = (config.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    removed_content = html + javascript
+    assert "按组卷要求找题" not in removed_content
+    assert "assistantRecommendBtn" not in removed_content
+    assert "assistantAddAllBtn" not in removed_content
+    assert "libraryResultsBody" not in removed_content
+    assert "resultsBody" not in removed_content
+    assert "function createQuestionCard(item, mode)" in javascript
+    assert 'question.setAttribute("aria-expanded", "false")' in javascript
+    assert 'questionSolutionSection("答案"' in javascript
+    assert 'questionSolutionSection("解析"' in javascript
+    assert ".question-card-question" in stylesheet
+    assert ".question-solution[hidden]" in stylesheet

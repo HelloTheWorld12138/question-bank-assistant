@@ -62,6 +62,34 @@ def test_unrecognized_long_answer_layout_is_left_for_manual_review():
     assert matched[0]["answer_format_recognized"] is False
 
 
+def test_import_draft_defaults_to_mechanics_without_overriding_explicit_block(
+    isolated_data,
+    tmp_path,
+):
+    common = {
+        "source_name": "questions.docx",
+        "source_kind": "docx",
+        "confidence": 0.95,
+        "warnings": [],
+        "source_dir": tmp_path,
+        "assets": {},
+    }
+
+    default_draft = imports._draft_from_chunk(
+        {"original_number": "1", "content": "求物体的加速度。"},
+        metadata={},
+        **common,
+    )
+    explicit_draft = imports._draft_from_chunk(
+        {"original_number": "2", "content": "求导线中的电流。"},
+        metadata={"板块": "电磁学"},
+        **common,
+    )
+
+    assert default_draft["block_code"] == "LX"
+    assert explicit_draft["block_code"] == "DX"
+
+
 def test_apply_teacher_answer_metadata_and_analysis_image(isolated_data, tmp_path):
     answer_assets = tmp_path / "answer-assets"
     answer_assets.mkdir()

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>题搭子</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=1.1.1" />
+    <link rel="stylesheet" href="./style.css?v=1.1.2" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -229,22 +229,25 @@
       </section>
 
       <section class="panel workspace-view" data-workspace-view="library">
-        <div class="section-title">
+        <div class="section-title catalog-heading">
           <div>
-            <div>
-              <h2>浏览与修改</h2>
-            </div>
-            <span class="section-description">按板块、题型或关键词快速定位题目</span>
+            <h2>查看题库</h2>
+            <span class="section-description">筛选后点击题目，可直接查看答案与解析</span>
           </div>
-          <button type="button" id="librarySearchBtn">查找题目</button>
+          <span id="libraryResultCount" class="result-count" aria-live="polite">正在读取题库</span>
         </div>
-        <div class="library-search-row">
-          <input id="libraryQuery" aria-label="题库关键词" placeholder="输入题号、题目内容或知识点" />
-          <button type="button" id="libraryClearBtn" class="ghost">清空</button>
-        </div>
-        <details class="filter-panel">
-          <summary>更多筛选条件</summary>
-          <div class="grid">
+        <section class="question-filter-panel" aria-label="查看题库筛选条件">
+          <div class="question-search-row">
+            <label class="question-search-field">
+              <span>关键词</span>
+              <input id="libraryQuery" placeholder="搜索题号、题目内容、答案或知识点" />
+            </label>
+            <div class="filter-actions">
+              <button type="button" id="libraryClearBtn" class="ghost">重置</button>
+              <button type="button" id="librarySearchBtn">筛选题目</button>
+            </div>
+          </div>
+          <div class="question-filter-grid">
             <label>
               板块
               <select id="libraryBlock"><option value="">全部</option></select>
@@ -285,57 +288,32 @@
               </select>
             </label>
           </div>
-        </details>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>题号</th>
-                <th>板块</th>
-                <th>类型</th>
-                <th>难度</th>
-                <th>来源</th>
-                <th>题目预览</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="libraryResultsBody"></tbody>
-          </table>
+        </section>
+        <div id="libraryResultsList" class="question-results" role="list" aria-live="polite">
+          <div class="question-list-status">正在读取题目...</div>
         </div>
       </section>
 
       <section class="panel workspace-view" data-workspace-view="select">
-        <div class="section-title">
-          <h2>选择题目</h2>
-          <button type="button" id="searchBtn">筛选</button>
-        </div>
-        <div class="assistant-search">
-          <div class="minor-title">按组卷要求找题</div>
-          <div class="assistant-query-row">
-            <textarea
-              id="assistantQuery"
-              rows="2"
-              placeholder="例如：找 5 道近三年力学创新题，中等难度，覆盖牛顿第二定律，约 45 分钟，带解析"
-            ></textarea>
-            <button type="button" id="assistantRecommendBtn">开始找题</button>
+        <div class="section-title catalog-heading">
+          <div>
+            <h2>选择题目</h2>
+            <span class="section-description">筛选后加入试卷，点击题目可核对答案与解析</span>
           </div>
-          <div class="assistant-options">
-            <label class="checkbox-line">
-              <input id="assistantUseAi" type="checkbox" />
-              使用 AI 调整排序（可选）
-            </label>
-            <button type="button" id="assistantAddAllBtn" class="secondary" disabled>全部加入试卷</button>
-          </div>
-          <div id="assistantResult" class="result-box"></div>
-          <div id="assistantRecommendations" class="assistant-recommendations"></div>
+          <span id="searchResultCount" class="result-count" aria-live="polite">正在读取题库</span>
         </div>
-        <details class="filter-panel">
-          <summary>按条件筛选</summary>
-          <div class="grid">
-            <label class="wide">
-              关键词
-              <input id="searchQuery" placeholder="题目、答案、解析或题号" />
+        <section class="question-filter-panel" aria-label="导出题目筛选条件">
+          <div class="question-search-row">
+            <label class="question-search-field">
+              <span>关键词</span>
+              <input id="searchQuery" placeholder="搜索题号、题目内容、答案或知识点" />
             </label>
+            <div class="filter-actions">
+              <button type="button" id="searchClearBtn" class="ghost">重置</button>
+              <button type="button" id="searchBtn">筛选题目</button>
+            </div>
+          </div>
+          <div class="question-filter-grid">
             <label>
               板块
               <select id="searchBlock"><option value="">全部</option></select>
@@ -376,26 +354,13 @@
               </select>
             </label>
           </div>
-        </details>
+        </section>
         <div class="selection-bar">
-          <span>已选 <strong id="selectedCount">0</strong> 题</span>
+          <span>试卷中已有 <strong id="selectedCount">0</strong> 题</span>
           <button type="button" id="clearSelectionBtn" class="ghost">清空选择</button>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>选择</th>
-                <th>题号</th>
-                <th>板块</th>
-                <th>类型</th>
-                <th>难度</th>
-                <th>来源</th>
-                <th>题目预览</th>
-              </tr>
-            </thead>
-            <tbody id="resultsBody"></tbody>
-          </table>
+        <div id="resultsList" class="question-results" role="list" aria-live="polite">
+          <div class="question-list-status">正在读取题目...</div>
         </div>
       </section>
 
@@ -658,6 +623,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=1.1.1"></script>
+    <script src="./app.js?v=1.1.2"></script>
   </body>
 </html>

@@ -14,7 +14,6 @@ const state = {
   modelSettings: null,
   modelProviders: [],
   importTask: null,
-  assistantRecommendations: [],
   imageEditor: null,
 };
 
@@ -752,6 +751,7 @@ async function loadOptions() {
     $("libraryBlock").appendChild(optionElement(block.name, block.name));
     $("editBlock").appendChild(optionElement(block.name, block.name));
   }
+  $("blockCode").value = state.options.default_block_code || "LX";
   for (const type of state.options.types) {
     $("typeCode").appendChild(optionElement(type.code, type.name));
     $("searchType").appendChild(optionElement(type.name, type.name));
@@ -1408,36 +1408,13 @@ function moveSelectedQuestion(index, delta) {
   renderExamSelection();
 }
 
-function appendQuestionCells(row, item) {
-  const values = [
-    item.id,
-    item["板块"] || "",
-    item["主类型"] || "",
-    item["难度"] || "",
-    item["来源"] || "",
-    item.preview || "",
-  ];
-  for (const [index, value] of values.entries()) {
-    const cell = document.createElement("td");
-    if (index === 0) cell.className = "question-id-cell";
-    if (index === values.length - 1) {
-      cell.className = "result-preview";
-      renderRichPreview(value, cell, "暂无预览");
-    } else {
-      cell.textContent = value;
-    }
-    row.appendChild(cell);
-  }
-}
-
-function questionActionCell(item) {
-  const actionCell = document.createElement("td");
+function questionActions(item) {
   const actions = document.createElement("div");
-  actions.className = "action-group";
+  actions.className = "question-card-actions";
   const editButton = document.createElement("button");
   editButton.type = "button";
   editButton.className = "ghost compact";
-  editButton.textContent = "查看 / 修改";
+  editButton.textContent = "修改";
   editButton.addEventListener("click", () => openQuestionEditor(item.id));
   const copyButton = document.createElement("button");
   copyButton.type = "button";
@@ -1450,31 +1427,106 @@ function questionActionCell(item) {
   deleteButton.textContent = "删除";
   deleteButton.addEventListener("click", () => deleteQuestion(item.id));
   actions.append(editButton, copyButton, deleteButton);
-  actionCell.appendChild(actions);
-  return actionCell;
+  return actions;
 }
 
-function renderResults(items) {
-  for (const item of items) {
-    state.resultItems.set(item.id, item);
+function questionMetaValues(item) {
+  const knowledge = Array.isArray(item["知识点"])
+    ? item["知识点"].slice(0, 3).join("、")
+    : item["知识点"];
+  return [
+    item["题型"],
+    item["难度"] ? `难度 ${item["难度"]}` : "",
+    item["板块"],
+    item["主类型"],
+    item["年份"],
+    knowledge,
+  ].filter(Boolean);
+}
+
+function setQuestionExpanded(card, trigger, solution, toggleButton, expanded) {
+  card.classList.toggle("is-expanded", expanded);
+  trigger.setAttribute("aria-expanded", String(expanded));
+  solution.hidden = !expanded;
+  toggleButton.textContent = expanded ? "收起解析" : "查看解析";
+}
+
+function questionSolutionSection(titleText, content, emptyText) {
+  const section = document.createElement("section");
+  section.className = "question-solution-section";
+  const title = document.createElement("h3");
+  title.textContent = titleText;
+  const preview = document.createElement("div");
+  preview.className = "question-solution-content";
+  renderRichPreview(content, preview, emptyText);
+  section.append(title, preview);
+  return section;
+}
+
+function createQuestionCard(item, mode) {
+  const card = document.createElement("article");
+  card.className = "question-card";
+  card.setAttribute("role", "listitem");
+  card.dataset.questionId = item.id;
+
+  const header = document.createElement("header");
+  header.className = "question-card-header";
+  const source = document.createElement("div");
+  source.className = "question-source";
+  source.textContent = item["来源"] || "题库题目";
+  const id = document.createElement("span");
+  id.className = "question-card-id";
+  id.textContent = item.id;
+  header.append(source, id);
+
+  const metadata = document.createElement("div");
+  metadata.className = "question-card-meta";
+  for (const value of questionMetaValues(item)) {
+    const entry = document.createElement("span");
+    entry.textContent = value;
+    metadata.appendChild(entry);
   }
-  const body = $("resultsBody");
-  body.innerHTML = "";
-  if (!items.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 7;
-    cell.textContent = "没有找到题目。";
-    row.appendChild(cell);
-    body.appendChild(row);
-    return;
-  }
-  for (const item of items) {
-    const row = document.createElement("tr");
-    const checkboxCell = document.createElement("td");
+
+  const question = document.createElement("div");
+  question.className = "question-card-question";
+  question.tabIndex = 0;
+  question.setAttribute("role", "button");
+  question.setAttribute("aria-expanded", "false");
+  question.setAttribute("aria-label", `${item.id}，点击查看答案与解析`);
+  const questionContent = document.createElement("div");
+  questionContent.className = "question-card-content";
+  renderRichPreview(item["题目"] || item.preview, questionContent, "暂无题目内容");
+  question.appendChild(questionContent);
+
+  const solution = document.createElement("div");
+  solution.className = "question-solution";
+  solution.hidden = true;
+  solution.append(
+    questionSolutionSection("答案", item["答案"], "暂无答案"),
+    questionSolutionSection("解析", item["解析"], "暂无解析"),
+  );
+
+  const footer = document.createElement("footer");
+  footer.className = "question-card-footer";
+  const details = document.createElement("div");
+  details.className = "question-card-details";
+  const toggleButton = document.createElement("button");
+  toggleButton.type = "button";
+  toggleButton.className = "ghost compact question-solution-toggle";
+  toggleButton.textContent = "查看解析";
+  details.appendChild(toggleButton);
+
+  if (mode === "library") {
+    footer.append(questionActions(item), details);
+  } else {
+    const selectLabel = document.createElement("label");
+    selectLabel.className = "add-question-control";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = state.selected.has(item.id);
+    const selectText = document.createElement("span");
+    selectText.textContent = checkbox.checked ? "已加入试卷" : "加入试卷";
+    card.classList.toggle("is-selected", checkbox.checked);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) {
         state.selected.add(item.id);
@@ -1485,39 +1537,66 @@ function renderResults(items) {
         state.selected.delete(item.id);
         state.displayLabels.delete(item.id);
       }
+      card.classList.toggle("is-selected", checkbox.checked);
+      selectText.textContent = checkbox.checked ? "已加入试卷" : "加入试卷";
       updateSelectedCount();
     });
-    checkboxCell.appendChild(checkbox);
-    row.appendChild(checkboxCell);
-    appendQuestionCells(row, item);
-    body.appendChild(row);
+    selectLabel.append(checkbox, selectText);
+    footer.append(selectLabel, details);
   }
+
+  const toggle = () => {
+    setQuestionExpanded(
+      card,
+      question,
+      solution,
+      toggleButton,
+      question.getAttribute("aria-expanded") !== "true",
+    );
+  };
+  question.addEventListener("click", toggle);
+  question.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggle();
+  });
+  toggleButton.addEventListener("click", toggle);
+
+  card.append(header, metadata, question, solution, footer);
+  return card;
 }
 
-function renderLibraryResults(items) {
-  for (const item of items) {
-    state.resultItems.set(item.id, item);
-  }
-  const body = $("libraryResultsBody");
-  body.innerHTML = "";
+function renderQuestionList(items, mode) {
+  const holder = $(mode === "library" ? "libraryResultsList" : "resultsList");
+  const count = $(mode === "library" ? "libraryResultCount" : "searchResultCount");
+  holder.innerHTML = "";
+  count.textContent = `共 ${items.length} 道题`;
   if (!items.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 7;
-    cell.textContent = "题库中没有符合条件的题目。";
-    row.appendChild(cell);
-    body.appendChild(row);
+    const empty = document.createElement("div");
+    empty.className = "question-list-status";
+    empty.textContent = "没有符合当前条件的题目，请调整筛选条件。";
+    holder.appendChild(empty);
     return;
   }
   for (const item of items) {
-    const row = document.createElement("tr");
-    appendQuestionCells(row, item);
-    row.appendChild(questionActionCell(item));
-    body.appendChild(row);
+    state.resultItems.set(item.id, item);
+    holder.appendChild(createQuestionCard(item, mode));
   }
 }
 
+function showQuestionListStatus(mode, message, isError = false) {
+  const holder = $(mode === "library" ? "libraryResultsList" : "resultsList");
+  const count = $(mode === "library" ? "libraryResultCount" : "searchResultCount");
+  holder.innerHTML = "";
+  const status = document.createElement("div");
+  status.className = `question-list-status${isError ? " is-error" : ""}`;
+  status.textContent = message;
+  holder.appendChild(status);
+  count.textContent = isError ? "读取失败" : "正在读取题库";
+}
+
 async function searchQuestions() {
+  showQuestionListStatus("select", "正在筛选题目...");
   const [sortBy, sortOrder] = $("searchSort").value.split(":");
   const params = new URLSearchParams({
     block: $("searchBlock").value,
@@ -1531,13 +1610,19 @@ async function searchQuestions() {
     sort_by: sortBy,
     sort_order: sortOrder,
   });
-  const response = await fetch(`/api/questions?${params}`);
-  const data = await response.json();
-  renderResults(data.items || []);
-  updateSelectedCount();
+  try {
+    const response = await fetch(`/api/questions?${params}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "筛选失败");
+    renderQuestionList(data.items || [], "select");
+    updateSelectedCount();
+  } catch (error) {
+    showQuestionListStatus("select", error.message || "题目读取失败，请稍后重试。", true);
+  }
 }
 
 async function searchLibraryQuestions() {
+  showQuestionListStatus("library", "正在筛选题目...");
   const [sortBy, sortOrder] = $("librarySort").value.split(":");
   const params = new URLSearchParams({
     block: $("libraryBlock").value,
@@ -1551,9 +1636,14 @@ async function searchLibraryQuestions() {
     sort_by: sortBy,
     sort_order: sortOrder,
   });
-  const response = await fetch(`/api/questions?${params}`);
-  const data = await response.json();
-  renderLibraryResults(data.items || []);
+  try {
+    const response = await fetch(`/api/questions?${params}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "筛选失败");
+    renderQuestionList(data.items || [], "library");
+  } catch (error) {
+    showQuestionListStatus("library", error.message || "题目读取失败，请稍后重试。", true);
+  }
 }
 
 function clearLibrarySearch() {
@@ -1573,108 +1663,25 @@ function clearLibrarySearch() {
   searchLibraryQuestions();
 }
 
+function clearQuestionSearch() {
+  for (const id of [
+    "searchQuery",
+    "searchBlock",
+    "searchType",
+    "searchDifficulty",
+    "searchYear",
+    "searchSource",
+    "searchKnowledge",
+    "searchQuestionType",
+  ]) {
+    $(id).value = "";
+  }
+  $("searchSort").value = "id:asc";
+  searchQuestions();
+}
+
 async function refreshQuestionLists() {
   await Promise.all([searchLibraryQuestions(), searchQuestions()]);
-}
-
-function renderAssistantRecommendations(data) {
-  state.assistantRecommendations = data.items || [];
-  const holder = $("assistantRecommendations");
-  holder.innerHTML = "";
-  $("assistantAddAllBtn").disabled = !state.assistantRecommendations.length;
-  const parsed = data.parsed || {};
-  const conditions = [
-    ...(parsed.blocks || []),
-    ...(parsed.types || []),
-    ...(parsed.knowledge_points || []),
-    ...(parsed.question_types || []),
-  ];
-  const summary =
-    `推荐 ${data.recommended_count || 0} 道 / 候选 ${data.candidate_count || 0} 道` +
-    ` · 预计 ${data.estimated_minutes || 0} 分钟` +
-    ` · ${data.used_ai ? "模型增强排序" : "本地排序"}` +
-    (conditions.length ? ` · 识别条件：${conditions.join("、")}` : "");
-  const warnings = (data.warnings || []).length ? `；${data.warnings.join("；")}` : "";
-  $("assistantResult").textContent = summary + warnings;
-
-  for (const item of state.assistantRecommendations) {
-    state.resultItems.set(item.id, {
-      id: item.id,
-      "题型": item.question_type,
-      preview: item.preview,
-    });
-    const card = document.createElement("article");
-    card.className = "assistant-recommendation-card";
-    const heading = document.createElement("div");
-    heading.className = "assistant-recommendation-heading";
-    const title = document.createElement("strong");
-    title.textContent = `${item.id} · ${item.block} · ${item.main_type}`;
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "ghost compact";
-    add.textContent = state.selected.has(item.id) ? "已在试卷中" : "加入试卷";
-    add.disabled = state.selected.has(item.id);
-    add.addEventListener("click", () => {
-      state.selected.add(item.id);
-      if (!state.displayLabels.has(item.id)) state.displayLabels.set(item.id, String(state.selected.size));
-      add.textContent = "已在试卷中";
-      add.disabled = true;
-      updateSelectedCount();
-    });
-    heading.append(title, add);
-    const preview = document.createElement("div");
-    preview.className = "assistant-preview";
-    appendFormattedText(preview, item.preview || "暂无题目预览");
-    const reason = document.createElement("div");
-    reason.className = "assistant-reason";
-    reason.textContent = `推荐理由：${item.reason}；预计 ${item.estimated_minutes} 分钟`;
-    card.append(heading, preview, reason);
-    holder.appendChild(card);
-  }
-}
-
-async function recommendQuestions() {
-  const query = $("assistantQuery").value.trim();
-  if (!query) {
-    alert("请先用一句话描述找题要求。");
-    return;
-  }
-  const useAi = $("assistantUseAi").checked;
-  let consent = true;
-  if (useAi && state.modelSettings?.cloud) {
-    consent = confirm(
-      "将把找题要求、候选题的分类信息和题目短预览发送到所选云模型。" +
-        "不会发送答案、完整解析或整个题库。是否继续？",
-    );
-    if (!consent) return;
-  }
-  $("assistantRecommendBtn").disabled = true;
-  $("assistantResult").textContent = "正在找题…";
-  const response = await fetch("/api/assistant/recommend", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, use_ai: useAi, consent }),
-  });
-  const data = await response.json();
-  $("assistantRecommendBtn").disabled = false;
-  if (!response.ok) {
-    $("assistantResult").textContent = data.detail || "找题失败";
-    return;
-  }
-  renderAssistantRecommendations(data);
-}
-
-function addAllRecommendations() {
-  for (const item of state.assistantRecommendations) {
-    if (state.selected.has(item.id)) continue;
-    state.selected.add(item.id);
-    state.displayLabels.set(item.id, String(state.selected.size));
-  }
-  updateSelectedCount();
-  for (const button of $("assistantRecommendations").querySelectorAll("button")) {
-    button.textContent = "已在试卷中";
-    button.disabled = true;
-  }
 }
 
 async function exportExam() {
@@ -2150,6 +2157,9 @@ function renderImportDrafts() {
   $("saveImportDraftsBtn").disabled = false;
   updateImportSelectionControls();
   task.drafts.forEach((draft, index) => {
+    if (!(state.options.blocks || []).some((item) => item.code === draft.block_code)) {
+      draft.block_code = state.options.default_block_code || "LX";
+    }
     for (const field of ["question", "answer", "analysis", "remarks"]) {
       if (field in draft) draft[field] = normalizeLineBreaks(draft[field]);
     }
@@ -2938,8 +2948,21 @@ function bindEvents() {
     if (event.key === "Enter") searchLibraryQuestions();
   });
   $("searchBtn").addEventListener("click", searchQuestions);
-  $("assistantRecommendBtn").addEventListener("click", recommendQuestions);
-  $("assistantAddAllBtn").addEventListener("click", addAllRecommendations);
+  $("searchClearBtn").addEventListener("click", clearQuestionSearch);
+  $("searchQuery").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") searchQuestions();
+  });
+  for (const id of [
+    "libraryBlock",
+    "libraryType",
+    "libraryQuestionType",
+    "librarySort",
+  ]) {
+    $(id).addEventListener("change", searchLibraryQuestions);
+  }
+  for (const id of ["searchBlock", "searchType", "searchQuestionType", "searchSort"]) {
+    $(id).addEventListener("change", searchQuestions);
+  }
   $("clearSelectionBtn").addEventListener("click", () => {
     state.selected.clear();
     state.displayLabels.clear();
