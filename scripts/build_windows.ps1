@@ -39,7 +39,7 @@ Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Build $App
   --hidden-import uvicorn.protocols.http.auto `
   desktop.py
 
-& (Join-Path $Root "scripts\test_windows_bundle.ps1") -Dist $Dist -AppName $AppName
+& (Join-Path $Root "scripts\test_windows_bundle.ps1") -Dist $Dist -AppName $AppName -Python $Python
 
 $AppVersion = & $Python -c "from app.config import APP_VERSION; print(APP_VERSION)"
 $IsccCandidates = @(

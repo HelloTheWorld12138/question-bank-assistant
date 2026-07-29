@@ -26,7 +26,8 @@
 | 平台 | 文件 | 说明 |
 |---|---|---|
 | macOS | `Tidazi-*-macOS-arm64.dmg` | 适用于 Apple 芯片 Mac |
-| Windows | `Tidazi-*-Windows-x64.zip` | 适用于 64 位 Windows，解压后运行 `题搭子.exe` |
+| macOS | `Tidazi-*-macOS-x64.dmg` | 适用于 Intel Mac |
+| Windows | `Tidazi-*-Windows-x64-Setup.exe` | 适用于 64 位 Windows |
 
 安装包与 `SHA256SUMS.txt` 均在 [Releases](https://github.com/HelloTheWorld12138/question-bank-assistant/releases/latest) 提供。
 
@@ -62,7 +63,7 @@ macOS 安装包目前未经过 Apple 公证。如果首次打开时提示无法�
 
 ## 使用说明
 
-- Word 导入与导出依赖 [Pandoc](https://pandoc.org/installing.html)。未检测到 Pandoc 时，其他题库功能仍可使用。
+- 桌面安装包已内置 Word 读写组件；仅从源码运行时需要自行安装 [Pandoc](https://pandoc.org/installing.html)。
 - 数字版 PDF 可以直接提取文字；扫描件和照片在未配置离线 OCR 时会保留原图，等待人工录入。
 - AI 分类与组卷建议属于可选增强，模型名称和服务地址均可在“设置”中修改。
 
@@ -95,13 +96,15 @@ bash scripts/build_macos_dmg.sh
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
 
-Windows 构建会生成 `dist/题搭子-Setup-版本号.exe` 安装包；它会内置 Pandoc，安装后即可
-使用 Word 导入与导出，并内置 Ruby 和 MathType 转换器以识别旧版 MathType 公式。构建机需安装
+macOS 与 Windows 构建都会内置固定版本的 Pandoc 和 MathType 转换资源，因此用户无需另行
+安装 Word 读取组件。Windows 构建会生成 `dist/题搭子-Setup-版本号.exe` 安装包，并内置
+Ruby、Nokogiri 和 MathType 转换器以识别旧版 MathType 公式。构建机会在生成安装包前实际启动这些组件并做
+冒烟测试；Windows 构建机还需安装
 [Inno Setup 6](https://jrsoftware.org/isdl.php)。
 
 首次安装时会检查 Microsoft Edge WebView2 Runtime；若电脑尚未安装，安装器会联网下载安装。
 
-推送与 `APP_VERSION` 一致的标签（例如 `v1.0.2`）会由 GitHub Actions 自动构建 Intel Mac、
+推送与 `APP_VERSION` 一致的标签（例如 `v1.0.5`）会由 GitHub Actions 自动构建 Intel Mac、
 Apple 芯片 Mac 和 Windows 安装包，并发布到 GitHub Release。
 
 更完整的环境变量、可选工具和发布说明见
@@ -123,7 +126,7 @@ docs/         开发说明与题库数据规范
 
 ## 项目状态
 
-当前稳定版为 **1.0.0**。功能建议和问题请提交到
+当前版本为 **1.0.5**。功能建议和问题请提交到
 [GitHub Issues](https://github.com/HelloTheWorld12138/question-bank-assistant/issues)。
 
 本仓库目前未附加开源许可证；源码与发行包的再分发需获得项目作者许可。

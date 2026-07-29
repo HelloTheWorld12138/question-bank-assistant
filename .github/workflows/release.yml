@@ -87,10 +87,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          NOTES_FILE=".github/release-notes/${TAG}.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ -f "$NOTES_FILE" ]]; then
+              gh release edit "$TAG" \
+                --title "题搭子 $TAG" \
+                --notes-file "$NOTES_FILE"
+            else
+              gh release edit "$TAG" --title "题搭子 $TAG"
+            fi
             gh release upload "$TAG" release/* --clobber
           else
-            gh release create "$TAG" release/* \
-              --title "题搭子 ${TAG#v}" \
-              --generate-notes
+            if [[ -f "$NOTES_FILE" ]]; then
+              gh release create "$TAG" release/* \
+                --title "题搭子 $TAG" \
+                --notes-file "$NOTES_FILE"
+            else
+              gh release create "$TAG" release/* \
+                --title "题搭子 $TAG" \
+                --generate-notes
+            fi
           fi

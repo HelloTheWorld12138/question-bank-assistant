@@ -38,11 +38,29 @@ RELATIONSHIPS_XML = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </Relationships>
 """
 
+ALTERNATE_PREFIX_DOCUMENT_XML = DOCUMENT_XML.replace("<w:", "<doc:").replace(
+    "</w:", "</doc:"
+).replace("xmlns:w=", "xmlns:doc=").replace(
+    'ProgID="Equation.DSMT4"', 'ProgID="Equation.DSMT4.0"'
+)
+IGNORABLE_NAMESPACE_DOCUMENT_XML = DOCUMENT_XML.replace(
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"',
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"\n'
+    '    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"\n'
+    '    xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"\n'
+    '    mc:Ignorable="w14"',
+)
 
-def build_mathtype_docx(path: Path) -> None:
+
+def build_mathtype_docx(
+    path: Path,
+    *,
+    document_xml: str = DOCUMENT_XML,
+    relationships_xml: str = RELATIONSHIPS_XML,
+) -> None:
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("word/document.xml", DOCUMENT_XML)
-        archive.writestr("word/_rels/document.xml.rels", RELATIONSHIPS_XML)
+        archive.writestr("word/document.xml", document_xml)
+        archive.writestr("word/_rels/document.xml.rels", relationships_xml)
         archive.writestr("word/embeddings/oleObject1.bin", b"ole")
         archive.writestr("word/media/formula.wmf", b"wmf")
 
@@ -66,6 +84,58 @@ def test_inspect_and_prepare_mathtype_docx(tmp_path):
     assert prepared_objects == objects
     assert b"QBMATH000001" in document_xml
     assert b"Equation.DSMT4" not in document_xml
+
+
+def test_mathtype_detection_accepts_real_world_progid_and_xml_prefix_variants(tmp_path):
+    source = tmp_path / "variant.docx"
+    prepared = tmp_path / "prepared.docx"
+    relationships = RELATIONSHIPS_XML.replace(
+        'Target="embeddings/oleObject1.bin"',
+        'Target="/word/embeddings/oleObject1.bin"',
+    )
+    build_mathtype_docx(
+        source,
+        document_xml=ALTERNATE_PREFIX_DOCUMENT_XML,
+        relationships_xml=relationships,
+    )
+
+    objects = mathtype.prepare_docx_for_pandoc(source, prepared)
+
+    assert len(objects) == 1
+    assert objects[0].prog_id == "Equation.DSMT4.0"
+    assert objects[0].ole_target == "word/embeddings/oleObject1.bin"
+    with zipfile.ZipFile(prepared) as archive:
+        prepared_xml = archive.read("word/document.xml")
+    assert b"QBMATH000001" in prepared_xml
+    assert b"Equation.DSMT4.0" not in prepared_xml
+
+
+def test_mathtype_preprocessing_preserves_unused_compatibility_namespaces(tmp_path):
+    source = tmp_path / "compatibility.docx"
+    prepared = tmp_path / "prepared.docx"
+    build_mathtype_docx(source, document_xml=IGNORABLE_NAMESPACE_DOCUMENT_XML)
+
+    mathtype.prepare_docx_for_pandoc(source, prepared)
+
+    with zipfile.ZipFile(prepared) as archive:
+        prepared_xml = archive.read("word/document.xml")
+    assert b'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"' in prepared_xml
+    assert b'mc:Ignorable="w14"' in prepared_xml
+    assert b"QBMATH000001" in prepared_xml
+
+
+def test_mathtype_status_requires_a_working_converter_runtime(monkeypatch):
+    mathtype._converter_runtime_status.cache_clear()
+    monkeypatch.setattr(
+        mathtype,
+        "_converter_runtime_status",
+        lambda: (False, "公式转换依赖不完整"),
+    )
+
+    status = mathtype.mathtype_status()
+
+    assert status["available"] is False
+    assert "依赖不完整" in status["message"]
 
 
 def test_restore_mathtype_formula_as_editable_latex(tmp_path):

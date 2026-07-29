@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "题搭子"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.5"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,8 +25,8 @@ EXPORT_DIR = Path(os.getenv("QUESTION_BANK_EXPORT_DIR", ROOT / "exports")).expan
 STATIC_DIR = ROOT / "static"
 KNOWLEDGE_FILE = ROOT / "data" / "knowledge.yaml"
 LOG_DIR = Path(os.getenv("QUESTION_BANK_LOG_DIR", ROOT / "logs")).expanduser().resolve()
-LOCAL_PANDOC = ROOT / "tools" / "pandoc" / "pandoc.exe"
-BUNDLED_RUBY = ROOT / "tools" / "ruby" / "bin" / "ruby.exe"
+LOCAL_PANDOC = ROOT / "tools" / "pandoc" / ("pandoc.exe" if os.name == "nt" else "pandoc")
+BUNDLED_RUBY = ROOT / "tools" / "ruby" / "bin" / ("ruby.exe" if os.name == "nt" else "ruby")
 BUNDLED_TEMPLATES_DIR = ROOT / "templates"
 OFFICECLI_VERSION = "1.0.142"
 OFFICECLI_DIR = ROOT / "tools" / "officecli"

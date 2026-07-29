@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 import zipfile
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -28,13 +29,24 @@ REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 MATH_MARKER_PREFIX = "QBMATH"
 MATHTYPE_PROG_IDS = {
+    "Equation.2",
     "Equation.3",
     "Equation.DSMT",
     "Equation.DSMT4",
+    "Equation.DSMT4.0",
+    "Equation.DSMT5",
     "MathType.Equation",
 }
-OBJECT_XML_RE = re.compile(rb"<w:object\b.*?</w:object>", re.S)
+MATHTYPE_PROG_ID_RE = re.compile(
+    r"^(?:Equation\.(?:[23]|DSMT(?:\d+(?:\.\d+)?)?)|MathType(?:[ .].*)?)$",
+    re.I,
+)
+XML_NAMESPACE_RE = re.compile(
+    rb"\bxmlns(?::([A-Za-z_][\w.-]*))?=[\"']([^\"']+)[\"']",
+    re.I,
+)
 PROG_ID_RE = re.compile(rb"\bProgID=[\"']([^\"']+)[\"']", re.I)
+OBJECT_ID_RE = re.compile(rb"\bObjectID=[\"']([^\"']+)[\"']", re.I)
 LATEX_FUNCTION_RE = re.compile(
     r"(?<![A-Za-z\\])"
     r"(arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|lim|max|min)"
@@ -60,12 +72,15 @@ class MathTypeObject:
 
 
 def _relationship_target(target: str) -> str:
-    return posixpath.normpath(posixpath.join("word", target.replace("\\", "/")))
+    normalized = target.replace("\\", "/").lstrip("/")
+    if normalized == "word" or normalized.startswith("word/"):
+        return posixpath.normpath(normalized)
+    return posixpath.normpath(posixpath.join("word", normalized))
 
 
 def _is_mathtype_prog_id(value: str) -> bool:
     normalized = str(value or "").strip()
-    return normalized in MATHTYPE_PROG_IDS or normalized.lower().startswith("mathtype")
+    return normalized in MATHTYPE_PROG_IDS or bool(MATHTYPE_PROG_ID_RE.fullmatch(normalized))
 
 
 def _ancestor(element: ElementTree.Element, parent_map: dict[ElementTree.Element, ElementTree.Element], tag: str):
@@ -128,21 +143,61 @@ def inspect_mathtype_objects(path: Path) -> list[MathTypeObject]:
 
 
 def _replace_mathtype_objects(document_xml: bytes, objects: list[MathTypeObject]) -> bytes:
+    """Replace MathType objects while preserving Word's original namespace declarations."""
+    word_prefix: bytes | None = None
+    found_word_namespace = False
+    for match in XML_NAMESPACE_RE.finditer(document_xml):
+        if match.group(2).decode("utf-8", errors="replace") == WORD_NS:
+            word_prefix = match.group(1)
+            found_word_namespace = True
+            break
+    if not found_word_namespace:
+        raise ValueError("Word namespace declaration is missing")
+    qualified_tag = (
+        re.escape(word_prefix) + rb":object"
+        if word_prefix
+        else rb"object"
+    )
+    object_pattern = re.compile(
+        rb"<" + qualified_tag + rb"\b[^>]*>.*?</" + qualified_tag + rb"\s*>",
+        re.S | re.I,
+    )
     index = 0
 
     def replace(match: re.Match[bytes]) -> bytes:
         nonlocal index
-        prog_match = PROG_ID_RE.search(match.group(0))
+        payload = match.group(0)
+        prog_match = PROG_ID_RE.search(payload)
         prog_id = prog_match.group(1).decode("utf-8", errors="replace") if prog_match else ""
         if not _is_mathtype_prog_id(prog_id):
-            return match.group(0)
+            return payload
         if index >= len(objects):
-            return match.group(0)
-        marker = objects[index].marker
+            return payload
+        expected = objects[index]
+        object_match = OBJECT_ID_RE.search(payload)
+        object_id = (
+            object_match.group(1).decode("utf-8", errors="replace")
+            if object_match
+            else ""
+        )
+        if prog_id.casefold() != expected.prog_id.casefold():
+            return payload
+        if expected.object_id and object_id != expected.object_id:
+            return payload
+        tag_prefix = word_prefix + b":" if word_prefix else b""
+        replacement = (
+            b"<"
+            + tag_prefix
+            + b't xml:space="preserve">'
+            + expected.marker.encode("ascii")
+            + b"</"
+            + tag_prefix
+            + b"t>"
+        )
         index += 1
-        return f'<w:t xml:space="preserve">{marker}</w:t>'.encode("ascii")
+        return replacement
 
-    result = OBJECT_XML_RE.sub(replace, document_xml)
+    result = object_pattern.sub(replace, document_xml)
     if index != len(objects):
         raise ValueError("MathType object order could not be preserved")
     return result
@@ -174,22 +229,53 @@ def find_ruby() -> str | None:
     return shutil.which("ruby")
 
 
-def mathtype_status() -> dict[str, Any]:
+@lru_cache(maxsize=1)
+def _converter_runtime_status() -> tuple[bool, str]:
     ruby = find_ruby()
-    missing = [
-        name
-        for name, _ in VENDOR_GEMS
-        if not (VENDOR_DIR / name).is_file()
-    ]
-    available = bool(ruby and CONVERTER_SCRIPT.is_file() and not missing)
+    missing = [name for name, _ in VENDOR_GEMS if not (VENDOR_DIR / name).is_file()]
+    if not ruby:
+        return False, "未找到公式转换运行时"
+    if not CONVERTER_SCRIPT.is_file() or missing:
+        return False, "公式转换文件不完整"
+    with tempfile.TemporaryDirectory(prefix="question-bank-mathtype-check-") as temp_dir:
+        try:
+            rubylib = _vendor_rubylib(Path(temp_dir))
+        except (OSError, KeyError, tarfile.TarError, ValueError):
+            return False, "公式转换文件无法解包"
+        environment = dict(os.environ)
+        environment["RUBYLIB"] = os.pathsep.join(
+            item for item in (rubylib, environment.get("RUBYLIB", "")) if item
+        )
+        try:
+            completed = subprocess.run(
+                [
+                    ruby,
+                    "-e",
+                    'require "mathtype_to_mathml_plus"; print "MATHTYPE_RUNTIME_OK"',
+                ],
+                cwd=str(config.ROOT),
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+                **hidden_process_kwargs(),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False, "公式转换运行时无法启动"
+    if completed.returncode != 0 or "MATHTYPE_RUNTIME_OK" not in completed.stdout:
+        return False, "公式转换依赖不完整"
+    return True, "可读取旧版 MathType 公式"
+
+
+def mathtype_status() -> dict[str, Any]:
+    available, message = _converter_runtime_status()
     return {
         "available": available,
         "offline": True,
-        "message": (
-            "可读取旧版 MathType 公式"
-            if available
-            else "旧版公式会保留原图，请人工核对"
-        ),
+        "message": message if available else f"{message}，旧版公式会保留原图，请人工核对",
     }
 
 

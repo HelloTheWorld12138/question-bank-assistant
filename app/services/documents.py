@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
@@ -26,15 +27,13 @@ HTML_ATTRIBUTE_RE = re.compile(
     r"(?P<name>[\w:-]+)\s*=\s*(?P<quote>[\"'])(?P<value>.*?)(?P=quote)",
     re.S,
 )
+logger = logging.getLogger(__name__)
 
 
 def find_pandoc() -> str | None:
-    system_pandoc = shutil.which("pandoc")
-    if system_pandoc:
-        return system_pandoc
-    if config.LOCAL_PANDOC.exists():
+    if config.LOCAL_PANDOC.is_file():
         return str(config.LOCAL_PANDOC)
-    return None
+    return shutil.which("pandoc")
 
 
 def strip_markdown_images(markdown: str) -> str:
@@ -213,6 +212,32 @@ def inspect_docx_payload(path: Path) -> dict[str, int]:
     return counts
 
 
+def _pandoc_docx_to_markdown(
+    pandoc_path: str,
+    input_path: Path,
+    output_path: Path,
+    media_dir: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            pandoc_path,
+            str(input_path),
+            "-t",
+            "gfm+tex_math_dollars",
+            "--wrap=none",
+            "--extract-media",
+            str(media_dir),
+            "-o",
+            str(output_path),
+        ],
+        cwd=str(config.ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        **hidden_process_kwargs(),
+    )
+
+
 def convert_docx_path(input_path: Path) -> dict[str, Any]:
     ensure_dirs()
     pandoc_path = find_pandoc()
@@ -245,25 +270,39 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
             **latex_failures,
         }
 
-        completed = subprocess.run(
-            [
-                pandoc_path,
-                str(pandoc_input),
-                "-t",
-                "gfm+tex_math_dollars",
-                "--wrap=none",
-                "--extract-media",
-                str(draft_dir),
-                "-o",
-                str(output_path),
-            ],
-            cwd=str(config.ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-            **hidden_process_kwargs(),
+        completed = _pandoc_docx_to_markdown(
+            pandoc_path,
+            pandoc_input,
+            output_path,
+            draft_dir,
         )
+        formula_preprocess_fallback_count = 0
+        if completed.returncode != 0 and mathtype_objects:
+            logger.warning(
+                "Pandoc rejected the MathType-preprocessed DOCX (exit %s); "
+                "retrying the original document: %s",
+                completed.returncode,
+                (completed.stderr or "").strip()[:2000],
+            )
+            formula_preprocess_fallback_count = len(mathtype_objects)
+            mathtype_objects = []
+            latex = {}
+            mathtype_failures = {}
+            shutil.rmtree(draft_dir, ignore_errors=True)
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            output_path.unlink(missing_ok=True)
+            completed = _pandoc_docx_to_markdown(
+                pandoc_path,
+                input_path,
+                output_path,
+                draft_dir,
+            )
         if completed.returncode != 0:
+            logger.warning(
+                "Pandoc could not read DOCX (exit %s): %s",
+                completed.returncode,
+                (completed.stderr or "").strip()[:2000],
+            )
             raise AppError("读取 Word 失败，请确认文件可以正常打开。", status_code=500, code="pandoc_failed")
         markdown = normalize_converted_markdown(output_path.read_text(encoding="utf-8"), draft_id)
         markdown, mathtype_summary = mathtype.restore_mathtype_markers(
@@ -275,6 +314,14 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
             draft_dir,
             draft_id,
         )
+        if formula_preprocess_fallback_count:
+            mathtype_summary = {
+                "detected": formula_preprocess_fallback_count,
+                "converted": 0,
+                "failed": formula_preprocess_fallback_count,
+                "available": False,
+                "formulas": [],
+            }
 
     images = []
     for image in sorted(draft_dir.rglob("*")):
@@ -297,6 +344,8 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
     agent_used = False
     warnings = []
+    if formula_preprocess_fallback_count:
+        warnings.append("旧版公式结构预处理未完成，已按原 Word 读取并保留公式预览图。")
     if opencode_available():
         try:
             agent_sections, agent_error = run_opencode(markdown, config.ROOT)

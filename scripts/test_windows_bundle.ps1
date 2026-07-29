@@ -1,6 +1,7 @@
 param(
     [string]$Dist = (Join-Path (Split-Path -Parent $PSScriptRoot) "dist"),
-    [string]$AppName = "题搭子"
+    [string]$AppName = "题搭子",
+    [string]$Python = "python"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,5 +26,11 @@ if ($Missing) {
 }
 if (-not (Test-Path (Join-Path $Dist "$AppName\$AppName.exe"))) {
     throw "Windows release is missing the application executable."
+}
+& $Python (Join-Path $PSScriptRoot "audit_mathtype_runtime.py") `
+    --runtime-root $Runtime `
+    --ruby (Join-Path $Runtime "tools\ruby\bin\ruby.exe")
+if ($LASTEXITCODE -ne 0) {
+    throw "Windows MathType runtime audit failed."
 }
 Write-Host "Windows bundle audit passed." -ForegroundColor Green
