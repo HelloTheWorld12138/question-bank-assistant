@@ -749,7 +749,7 @@ def export_exam(payload: dict[str, Any]) -> dict[str, Any]:
             office.render_html(exam_docx, preview_path)
             preview_filename = preview_path.name
         except AppError as exc:
-            office_message = f"Word 已生成，但自动排版检查未完成：{exc.message}"
+            office_message = "Word 已生成，但自动排版检查未完成；请下载后打开确认。"
     elif docx_created:
         office_message = "Word 已生成；本次未执行自动排版检查。"
 

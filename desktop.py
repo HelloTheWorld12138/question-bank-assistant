@@ -45,6 +45,9 @@ def main() -> None:
     if not server.started:
         raise RuntimeError("题库服务未能启动，请检查应用日志。")
 
+    # Desktop webviews disable file downloads by default. Enable the native
+    # save dialog so generated Word files can be downloaded on macOS and Windows.
+    webview.settings["ALLOW_DOWNLOADS"] = True
     webview.create_window(
         "题搭子",
         f"http://127.0.0.1:{port}",

@@ -1716,11 +1716,13 @@ async function exportExam() {
     if (exported.docx_created) {
       const wordLink = document.createElement("a");
       wordLink.href = `/download/${encodeURIComponent(exported.exam_docx_filename)}`;
+      wordLink.download = exported.exam_docx_filename;
       wordLink.textContent = "下载 Word";
       result.appendChild(wordLink);
     } else if (exported.exam_md_filename) {
       const fallbackLink = document.createElement("a");
       fallbackLink.href = `/download/${encodeURIComponent(exported.exam_md_filename)}`;
+      fallbackLink.download = exported.exam_md_filename;
       fallbackLink.textContent = "下载备用文件";
       result.appendChild(fallbackLink);
     }

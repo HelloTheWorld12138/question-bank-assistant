@@ -70,6 +70,7 @@ def test_teacher_import_fields_enforce_word_and_image_roles():
     html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
     javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
     stylesheet = (config.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+    desktop = (config.ROOT / "desktop.py").read_text(encoding="utf-8")
 
     assert 'id="batchImportFile" type="file" accept=".docx"' in html
     assert 'id="batchAnswerFile" type="file" accept=".docx"' in html
@@ -87,6 +88,9 @@ def test_teacher_import_fields_enforce_word_and_image_roles():
     assert "—" not in html + javascript + stylesheet
     assert 'role="status" aria-live="polite"' in html
     assert 'setAttribute("aria-selected", String(active))' in javascript
+    assert "wordLink.download = exported.exam_docx_filename" in javascript
+    assert "fallbackLink.download = exported.exam_md_filename" in javascript
+    assert 'webview.settings["ALLOW_DOWNLOADS"] = True' in desktop
 
 
 def test_import_review_uses_one_full_preview_without_confidence_banner():

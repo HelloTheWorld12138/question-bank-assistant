@@ -39,6 +39,7 @@ def run_officecli(
     *,
     timeout: int = 60,
     require_json: bool = True,
+    allow_unsuccessful_result: bool = False,
 ) -> dict[str, Any] | str:
     executable = find_officecli()
     if not executable:
@@ -72,7 +73,10 @@ def run_officecli(
             parsed = raw if isinstance(raw, dict) else {"success": True, "data": raw}
         except json.JSONDecodeError:
             parsed = None
-    if completed.returncode != 0 or (parsed and parsed.get("success") is False):
+    result_is_unsuccessful = bool(parsed and parsed.get("success") is False)
+    if (completed.returncode != 0 and not allow_unsuccessful_result) or (
+        result_is_unsuccessful and not allow_unsuccessful_result
+    ):
         message = ""
         if parsed:
             detail = parsed.get("error") or parsed.get("message") or parsed.get("data")
@@ -108,10 +112,24 @@ def officecli_status() -> dict[str, Any]:
 
 
 def validate_document(path: Path) -> dict[str, Any]:
-    result = run_officecli(["validate", str(path)])
+    result = run_officecli(
+        ["validate", str(path)],
+        allow_unsuccessful_result=True,
+    )
+    if not isinstance(result, dict):
+        raise AppError("OfficeCLI 返回了无法识别的校验结果", code="officecli_invalid_output")
+    warnings = result.get("warnings")
+    if result.get("success") is False and not isinstance(warnings, list):
+        detail = result.get("error") or result.get("message") or "Word 结构校验未通过"
+        raise AppError(str(detail), code="officecli_validation_failed")
     return {
         "ok": bool(result.get("success")),
-        "message": str(result.get("message") or result.get("data") or ""),
+        "message": (
+            f"发现 {len(warnings)} 项兼容性提示"
+            if isinstance(warnings, list) and warnings
+            else str(result.get("message") or result.get("data") or "")
+        ),
+        "warning_count": len(warnings) if isinstance(warnings, list) else 0,
     }
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "题搭子"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent

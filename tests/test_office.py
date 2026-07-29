@@ -43,6 +43,37 @@ def test_officecli_json_failure_becomes_app_error(isolated_data, monkeypatch, tm
         office.validate_document(Path("bad.docx"))
 
 
+def test_officecli_validation_warnings_are_returned_without_raw_json(
+    isolated_data,
+    monkeypatch,
+    tmp_path,
+):
+    binary = tmp_path / "officecli"
+    binary.write_text("binary", encoding="utf-8")
+    monkeypatch.setenv("OFFICECLI_PATH", str(binary))
+    warnings = [{"message": "m:sty schema warning", "code": "warning"}]
+    monkeypatch.setattr(
+        office.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps(
+                {"success": False, "warnings": warnings},
+                ensure_ascii=False,
+            ),
+            stderr="",
+        ),
+    )
+
+    result = office.validate_document(Path("formula.docx"))
+
+    assert result == {
+        "ok": False,
+        "message": "发现 1 项兼容性提示",
+        "warning_count": 1,
+    }
+
+
 def test_missing_officecli_has_clear_status(isolated_data, monkeypatch):
     monkeypatch.delenv("OFFICECLI_PATH", raising=False)
     monkeypatch.setattr(config, "LOCAL_OFFICECLI", Path("/missing/officecli"))
