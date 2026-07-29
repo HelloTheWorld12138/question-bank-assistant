@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import json
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from app import mathtype
 
@@ -136,6 +139,61 @@ def test_mathtype_status_requires_a_working_converter_runtime(monkeypatch):
 
     assert status["available"] is False
     assert "依赖不完整" in status["message"]
+
+
+def test_large_mathtype_batch_uses_stdin_manifest(monkeypatch, tmp_path):
+    objects = [
+        mathtype.MathTypeObject(
+            marker=f"QBMATH{index:06d}",
+            prog_id="Equation.DSMT4",
+            object_id=f"_{index}",
+            ole_target=f"word/embeddings/oleObject{index}.bin",
+            preview_target=f"word/media/formula{index}.wmf",
+            display=False,
+        )
+        for index in range(1, 401)
+    ]
+    captured = {}
+
+    monkeypatch.setattr(mathtype, "find_ruby", lambda: "ruby")
+    monkeypatch.setattr(
+        mathtype,
+        "mathtype_status",
+        lambda: {"available": True, "message": "可读取旧版 MathType 公式"},
+    )
+    monkeypatch.setattr(
+        mathtype,
+        "_extract_ole_objects",
+        lambda source, items, destination: {
+            item.marker: destination / f"{item.marker}.bin" for item in items
+        },
+    )
+    monkeypatch.setattr(mathtype, "_vendor_rubylib", lambda runtime_dir: "vendor-ruby")
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["input"] = kwargs["input"]
+        manifest = json.loads(kwargs["input"])
+        encoded = base64.b64encode(b"<math><mi>x</mi></math>").decode("ascii")
+        stdout = "\n".join(
+            json.dumps({"id": marker, "ok": True, "mathml": encoded})
+            for marker in manifest
+        )
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(mathtype.subprocess, "run", fake_run)
+
+    converted, failures = mathtype.convert_ole_objects_to_mathml(
+        tmp_path / "large.docx",
+        objects,
+    )
+
+    assert captured["command"] == ["ruby", str(mathtype.CONVERTER_SCRIPT), "--stdin-json"]
+    manifest = json.loads(captured["input"])
+    assert len(manifest) == 400
+    assert set(manifest) == {item.marker for item in objects}
+    assert len(converted) == 400
+    assert failures == {}
 
 
 def test_restore_mathtype_formula_as_editable_latex(tmp_path):

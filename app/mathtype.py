@@ -359,11 +359,11 @@ def convert_ole_objects_to_mathml(
         except (OSError, KeyError, tarfile.TarError, ValueError) as exc:
             message = f"公式转换组件无法准备：{exc}"
             return {}, {item.marker: message for item in objects}
-        command = [
-            ruby,
-            str(CONVERTER_SCRIPT),
-            *(f"{marker}={path}" for marker, path in extracted.items()),
-        ]
+        command = [ruby, str(CONVERTER_SCRIPT), "--stdin-json"]
+        manifest = json.dumps(
+            {marker: str(path) for marker, path in extracted.items()},
+            ensure_ascii=False,
+        )
         environment = dict(os.environ)
         environment["RUBYLIB"] = os.pathsep.join(
             item for item in (rubylib, environment.get("RUBYLIB", "")) if item
@@ -374,6 +374,7 @@ def convert_ole_objects_to_mathml(
                 command,
                 cwd=str(config.ROOT),
                 env=environment,
+                input=manifest,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

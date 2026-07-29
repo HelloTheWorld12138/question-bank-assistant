@@ -66,6 +66,29 @@ def test_import_review_can_select_all_pending_drafts():
     assert "function toggleAllImportDrafts()" in javascript
 
 
+def test_teacher_import_fields_enforce_word_and_image_roles():
+    html = (config.ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    stylesheet = (config.ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="batchImportFile" type="file" accept=".docx"' in html
+    assert 'id="batchAnswerFile" type="file" accept=".docx"' in html
+    assert "仅支持 .docx Word 文件，不支持 PDF。" in html
+    assert "题目图片（可不选）" in html
+    assert 'id="files" type="file" multiple accept="image/*"' in html
+    assert "从 Word 自动整理题目" in html
+    assert 'id="convertTarget"' not in html
+    assert 'class="import-source-grid"' in html
+    assert 'class="word-convert-field"' in html
+    assert 'class="content-field question-workbench"' in html
+    assert 'const MATHTYPE_FALLBACK_RE = /^QBMATH' in javascript
+    assert "formulaNames.has(name) || MATHTYPE_FALLBACK_RE.test(name)" in javascript
+    assert "@media (prefers-reduced-motion: reduce)" in stylesheet
+    assert "—" not in html + javascript + stylesheet
+    assert 'role="status" aria-live="polite"' in html
+    assert 'setAttribute("aria-selected", String(active))' in javascript
+
+
 def test_import_review_uses_one_full_preview_without_confidence_banner():
     javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
 

@@ -605,13 +605,15 @@ def _drafts_from_docx(
 def _plain_segments_from_path(
     path: Path,
     work_dir: Path,
-) -> tuple[list[dict[str, str]], Path | None, dict[str, Path]]:
+) -> tuple[list[dict[str, str]], Path | None, dict[str, Path], dict[str, Any]]:
     suffix = path.suffix.lower()
     source_dir: Path | None = None
     assets: dict[str, Path] = {}
+    mathtype_summary: dict[str, Any] = {}
     if suffix == ".docx":
         converted = documents.convert_docx_path(path)
         text = converted["markdown"]
+        mathtype_summary = dict(converted.get("mathtype") or {})
         original_draft_id = str(converted.get("draft_id") or "")
         if original_draft_id:
             source_dir = config.DRAFT_ASSETS_DIR / original_draft_id
@@ -628,7 +630,50 @@ def _plain_segments_from_path(
         text = MARKDOWN_IMAGE_RE.sub("", pages[0]["markdown"])
     else:
         raise AppError("答案文件格式不受支持。")
-    return split_numbered_content(text), source_dir, assets
+    return split_numbered_content(text), source_dir, assets, mathtype_summary
+
+
+def _combine_mathtype_summaries(
+    summaries: list[tuple[str, str, dict[str, Any]]],
+) -> dict[str, Any]:
+    sources: list[dict[str, Any]] = []
+    formulas: list[dict[str, Any]] = []
+    detected = 0
+    converted = 0
+    failed = 0
+    for role, source_name, summary in summaries:
+        source_detected = int(summary.get("detected") or 0)
+        source_converted = int(summary.get("converted") or 0)
+        source_failed = int(summary.get("failed") or 0)
+        detected += source_detected
+        converted += source_converted
+        failed += source_failed
+        sources.append(
+            {
+                "role": role,
+                "source": source_name,
+                "detected": source_detected,
+                "converted": source_converted,
+                "failed": source_failed,
+            }
+        )
+        formulas.extend(
+            {
+                **item,
+                "source_role": role,
+                "source": source_name,
+            }
+            for item in summary.get("formulas", [])
+            if isinstance(item, dict)
+        )
+    return {
+        "detected": detected,
+        "converted": converted,
+        "failed": failed,
+        "available": bool(detected and converted),
+        "formulas": formulas,
+        "sources": sources,
+    }
 
 
 def _attach_answer_assets(
@@ -783,7 +828,11 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
         raise AppError("请选择要导入的文件。")
     suffix = Path(file.filename).suffix.lower()
     if suffix not in config.IMPORT_EXTENSIONS:
-        raise AppError("仅支持 DOCX、PDF、PNG、JPG、WEBP、BMP 或 TIFF。")
+        raise AppError("批量导入仅支持 .docx Word 文件，不支持 PDF。")
+    if answer_file and answer_file.filename:
+        answer_suffix = Path(answer_file.filename).suffix.lower()
+        if answer_suffix not in config.IMPORT_EXTENSIONS:
+            raise AppError("批量导入仅支持 .docx Word 文件，不支持 PDF。")
     task_id = str(uuid.uuid4())
     task_dir = config.IMPORT_TASKS_DIR / task_id
     input_dir = task_dir / "input"
@@ -793,26 +842,22 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
     input_path = input_dir / f"questions{suffix}"
     await _save_upload(file, input_path)
 
-    mathtype_summary: dict[str, Any] = {}
-    if suffix == ".docx":
-        drafts, mathtype_summary = _drafts_from_docx(input_path, file.filename)
-    elif suffix == ".pdf":
-        drafts = _drafts_from_pages(_extract_pdf_pages(input_path, work_dir), file.filename, work_dir)
-    else:
-        drafts = _drafts_from_pages(_extract_image_page(input_path, work_dir), file.filename, work_dir)
+    drafts, question_mathtype_summary = _drafts_from_docx(input_path, file.filename)
+    mathtype_sources = [("question", file.filename, question_mathtype_summary)]
 
     answer_name = ""
     if answer_file and answer_file.filename:
         answer_suffix = Path(answer_file.filename).suffix.lower()
-        if answer_suffix not in config.IMPORT_EXTENSIONS:
-            raise AppError("答案文件格式不受支持。")
         answer_path = input_dir / f"answers{answer_suffix}"
         await _save_upload(answer_file, answer_path)
         answer_name = answer_file.filename
-        answer_segments, answer_source_dir, answer_assets = _plain_segments_from_path(
-            answer_path,
-            work_dir / "answers",
-        )
+        (
+            answer_segments,
+            answer_source_dir,
+            answer_assets,
+            answer_mathtype_summary,
+        ) = _plain_segments_from_path(answer_path, work_dir / "answers")
+        mathtype_sources.append(("answer", answer_name, answer_mathtype_summary))
         try:
             _apply_answers(
                 drafts,
@@ -832,7 +877,7 @@ async def create_import_task(file: UploadFile, answer_file: UploadFile | None = 
         "answer_source": answer_name,
         "drafts": drafts,
         "ocr": ocr_status(),
-        "mathtype": mathtype_summary,
+        "mathtype": _combine_mathtype_summaries(mathtype_sources),
     }
     save_import_task(task)
     shutil.rmtree(work_dir, ignore_errors=True)

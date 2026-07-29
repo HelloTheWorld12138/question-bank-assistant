@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 APP_NAME = "题搭子"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.1.0"
 SCHEMA_VERSION = 1
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -130,4 +130,4 @@ IMAGE_EXTENSIONS = {
     ".wmf",
     ".emf",
 }
-IMPORT_EXTENSIONS = {".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+IMPORT_EXTENSIONS = {".docx"}

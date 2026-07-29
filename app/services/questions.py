@@ -83,10 +83,15 @@ async def save_uploads(
     upload_tokens: list[str] | None = None,
     referenced_markdown: str = "",
 ) -> tuple[list[str], dict[str, str]]:
+    for upload in uploads:
+        if not upload.filename:
+            continue
+        if Path(upload.filename).suffix.lower() not in config.IMAGE_EXTENSIONS:
+            raise AppError("这里只能上传题目图片；Word 请使用“从 Word 自动整理题目”。")
+
     saved: list[str] = []
     link_map: dict[str, str] = {}
     image_count = start_index
-    doc_count = 1
     tokens = upload_tokens or []
     for upload_index, upload in enumerate(uploads):
         if not upload.filename:
@@ -94,15 +99,11 @@ async def save_uploads(
         source_name = Path(upload.filename)
         ext = source_name.suffix.lower() or ".bin"
         token = tokens[upload_index] if upload_index < len(tokens) else ""
-        if ext in config.IMAGE_EXTENSIONS:
-            if token and token not in referenced_markdown:
-                continue
-            filename = _image_target_name(question_id, image_count, source_name)
-            image_count += 1
-            saved.append(filename)
-        else:
-            filename = f"{question_id}_附件{doc_count}{ext}"
-            doc_count += 1
+        if token and token not in referenced_markdown:
+            continue
+        filename = _image_target_name(question_id, image_count, source_name)
+        image_count += 1
+        saved.append(filename)
         target = config.ASSETS_DIR / filename
         upload.file.seek(0)
         if ext in RASTER_IMAGE_EXTENSIONS:
@@ -110,7 +111,7 @@ async def save_uploads(
         else:
             with target.open("wb") as buffer:
                 shutil.copyfileobj(upload.file, buffer)
-        if token and ext in config.IMAGE_EXTENSIONS:
+        if token:
             link_map[token] = filename
     return saved, link_map
 

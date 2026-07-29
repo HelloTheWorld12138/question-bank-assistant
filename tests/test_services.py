@@ -156,6 +156,22 @@ def test_uploaded_image_token_is_placed_and_normalized_to_png(isolated_data):
     assert (config.ASSETS_DIR / "LXJC0001_01.png").read_bytes().startswith(b"\x89PNG")
 
 
+def test_non_image_question_attachment_is_rejected(isolated_data):
+    upload = UploadFile(filename="source.docx", file=BytesIO(b"not-an-image"))
+
+    with pytest.raises(AppError, match="只能上传题目图片"):
+        asyncio.run(
+            questions.create_question(
+                block_code="LX",
+                type_code="JC",
+                question_text="测试题目",
+                files=[upload],
+            )
+        )
+
+    assert not list(config.QUESTIONS_DIR.glob("*.md"))
+
+
 def test_raw_word_html_image_is_materialized_from_draft(isolated_data):
     draft_id = "88825861-b762-4c69-aa6b-d1f536a9f879"
     draft_dir = config.DRAFT_ASSETS_DIR / draft_id / "media"

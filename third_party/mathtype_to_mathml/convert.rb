@@ -2,8 +2,21 @@ require "base64"
 require "json"
 require "mathtype_to_mathml_plus"
 
-ARGV.each do |argument|
-  marker, path = argument.split("=", 2)
+entries = []
+if ARGV == ["--stdin-json"]
+  manifest = JSON.parse(STDIN.read)
+  if manifest.is_a?(Hash)
+    manifest.each do |marker, path|
+      entries << [marker.to_s, path.to_s]
+    end
+  end
+else
+  ARGV.each do |argument|
+    entries << argument.split("=", 2)
+  end
+end
+
+entries.each do |marker, path|
   next if marker.nil? || marker.empty? || path.nil? || path.empty?
 
   begin
@@ -26,4 +39,3 @@ ARGV.each do |argument|
     )
   end
 end
-

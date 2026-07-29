@@ -2,11 +2,12 @@ import asyncio
 import json
 from io import BytesIO
 
-import pymupdf
+import pytest
 from PIL import Image
 from starlette.datastructures import UploadFile
 
 from app import config, storage
+from app.errors import AppError
 from app.services import imports
 
 
@@ -195,36 +196,79 @@ def test_draft_image_enhancement_can_be_cancelled(isolated_data):
     assert image_path.read_bytes() == original
 
 
-def test_digital_pdf_creates_review_drafts(isolated_data):
-    document = pymupdf.open()
-    page = document.new_page()
-    page.insert_text((72, 72), "1. First physics question")
-    page.insert_text((72, 110), "2. Second physics question")
-    pdf_bytes = document.tobytes()
-    document.close()
-
-    task = asyncio.run(imports.create_import_task(upload("questions.pdf", pdf_bytes)))
-
-    assert task["status"] == "待审核"
-    assert len(task["drafts"]) == 2
-    assert [item["original_number"] for item in task["drafts"]] == ["1", "2"]
-    assert all(item["source_kind"] == "digital_pdf" for item in task["drafts"])
-    assert not list(config.QUESTIONS_DIR.glob("*.md"))
+@pytest.mark.parametrize("filename", ["questions.pdf", "photo.png", "legacy.doc"])
+def test_batch_import_rejects_non_docx_files(isolated_data, filename):
+    with pytest.raises(AppError, match="仅支持 .docx Word 文件"):
+        asyncio.run(imports.create_import_task(upload(filename, b"unsupported")))
 
 
-def test_image_without_ocr_stays_pending_with_original_image(isolated_data, monkeypatch):
-    buffer = BytesIO()
-    Image.new("RGB", (160, 100), "white").save(buffer, format="PNG")
-    monkeypatch.setattr(imports, "ocr_available", lambda: False)
+def test_batch_import_rejects_non_docx_answer_file(isolated_data):
+    with pytest.raises(AppError, match="不支持 PDF"):
+        asyncio.run(
+            imports.create_import_task(
+                upload("questions.docx", b"docx"),
+                upload("answers.pdf", b"pdf"),
+            )
+        )
 
-    task = asyncio.run(imports.create_import_task(upload("photo.png", buffer.getvalue())))
 
-    assert len(task["drafts"]) == 1
-    draft = task["drafts"][0]
-    assert draft["confidence"] == 0
-    assert draft["requires_attention"] is True
-    assert draft["images"]
-    assert (config.DRAFT_ASSETS_DIR / draft["draft_id"] / draft["images"][0]["name"]).exists()
+def test_batch_import_combines_question_and_answer_mathtype_summaries(
+    isolated_data,
+    monkeypatch,
+):
+    question_summary = {
+        "detected": 163,
+        "converted": 163,
+        "failed": 0,
+        "formulas": [{"marker": "QBMATH000001", "status": "converted"}],
+    }
+    answer_summary = {
+        "detected": 358,
+        "converted": 357,
+        "failed": 1,
+        "formulas": [{"marker": "QBMATH000001", "status": "needs_review"}],
+    }
+    monkeypatch.setattr(
+        imports,
+        "_drafts_from_docx",
+        lambda path, source_name: ([], question_summary),
+    )
+    monkeypatch.setattr(
+        imports,
+        "_plain_segments_from_path",
+        lambda path, work_dir: ([], None, {}, answer_summary),
+    )
+
+    task = asyncio.run(
+        imports.create_import_task(
+            upload("questions.docx", b"questions"),
+            upload("answers.docx", b"answers"),
+        )
+    )
+
+    assert task["mathtype"]["detected"] == 521
+    assert task["mathtype"]["converted"] == 520
+    assert task["mathtype"]["failed"] == 1
+    assert task["mathtype"]["sources"] == [
+        {
+            "role": "question",
+            "source": "questions.docx",
+            "detected": 163,
+            "converted": 163,
+            "failed": 0,
+        },
+        {
+            "role": "answer",
+            "source": "answers.docx",
+            "detected": 358,
+            "converted": 357,
+            "failed": 1,
+        },
+    ]
+    assert [item["source_role"] for item in task["mathtype"]["formulas"]] == [
+        "question",
+        "answer",
+    ]
 
 
 def test_commit_confirmed_import_drafts(isolated_data):

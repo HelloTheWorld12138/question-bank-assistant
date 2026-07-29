@@ -26,6 +26,8 @@ const RICH_CONTENT_RE =
 const INLINE_FORMAT_RE =
   /(<sub>[^<>]*<\/sub>|<sup>[^<>]*<\/sup>|\*\*\*[^*\n]+\*\*\*|___[^_\n]+___|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/gi;
 const METAFILE_RE = /\.(wmf|emf)(?:\?.*)?$/i;
+const IMAGE_FILE_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|wmf|emf)$/i;
+const MATHTYPE_FALLBACK_RE = /^QBMATH\d+\.(wmf|emf)$/i;
 let metafileConverterPromise = null;
 
 const WORKSPACE_VIEWS = new Set([
@@ -60,10 +62,16 @@ function switchWorkspaceView(requestedView, { updateHash = true } = {}) {
     section.classList.toggle("is-active", section.dataset.workspaceView === view);
   }
   for (const button of document.querySelectorAll(".subtask-nav-item")) {
-    button.classList.toggle("is-active", button.dataset.workspaceTarget === view);
+    const active = button.dataset.workspaceTarget === view;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   }
   for (const button of document.querySelectorAll(".module-nav-item")) {
-    button.classList.toggle("is-active", button.dataset.moduleTarget === module);
+    const active = button.dataset.moduleTarget === module;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   }
   for (const menu of document.querySelectorAll(".subtask-menu")) {
     menu.classList.toggle("is-active", menu.dataset.moduleMenu === module);
@@ -455,8 +463,11 @@ async function normalizeManualMetafiles(data, onProgress = () => {}) {
 function importTaskMetafiles(task) {
   const items = [];
   for (const draft of task?.drafts || []) {
+    const formulaNames = new Set(draft.formula_image_names || []);
     for (const image of draft.images || []) {
       if (!METAFILE_RE.test(image.name || image.url)) continue;
+      const name = (image.name || String(image.url || "").split("/").pop()).split("?", 1)[0];
+      if (formulaNames.has(name) || MATHTYPE_FALLBACK_RE.test(name)) continue;
       items.push({ draft, image });
     }
   }
@@ -705,7 +716,9 @@ function bindTaxonomyNavigation() {
     button.addEventListener("click", () => {
       taxonomyMode = button.dataset.taxonomyMode;
       for (const tab of document.querySelectorAll("[data-taxonomy-mode]")) {
-        tab.classList.toggle("is-active", tab === button);
+        const active = tab === button;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-selected", String(active));
       }
       renderTaxonomyList();
     });
@@ -717,11 +730,9 @@ function renderSystemStatus() {
   const status = $("pandocStatus");
   const wordReady = Boolean(state.options.pandoc);
   const legacyFormulaReady = Boolean(state.options.mathtype?.available);
-  const ocrReady = Boolean(state.options.ocr?.available);
   const aiReady = Boolean(state.modelSettings?.enabled);
   status.textContent =
     `Word ${wordReady ? "可用" : "不可用"} · ` +
-    `图片识别${ocrReady ? "可用" : "需人工填写"} · ` +
     `旧版公式${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
     `AI 分类${aiReady ? "已启用" : "未启用"}`;
   status.className = `system-status ${wordReady ? "ok" : "warn"}`;
@@ -795,19 +806,27 @@ function setSaveEnabled() {
 }
 
 function setUploadItems(fileList) {
+  const selectedFiles = Array.from(fileList || []);
+  const invalid = selectedFiles.find(
+    (file) => !file.type.startsWith("image/") && !IMAGE_FILE_RE.test(file.name),
+  );
+  if (invalid) {
+    alert("这里只能上传题目图片；Word 请使用“从 Word 自动整理题目”。");
+    $("files").value = "";
+    return;
+  }
   const convertedWordUploads = state.uploadItems.filter(
     (item) => item.source === "word-conversion",
   );
   for (const item of state.uploadItems.filter((candidate) => candidate.source !== "word-conversion")) {
     if (item.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
   }
-  const manualUploads = Array.from(fileList || []).map((file, index) => {
-    const isImage = file.type.startsWith("image/");
+  const manualUploads = selectedFiles.map((file, index) => {
     const uniquePart = window.crypto?.randomUUID?.() || `${Date.now()}-${index}`;
     return {
       file,
-      token: isImage ? `upload-image://${uniquePart}` : "",
-      previewUrl: isImage ? URL.createObjectURL(file) : "",
+      token: `upload-image://${uniquePart}`,
+      previewUrl: URL.createObjectURL(file),
       source: "manual",
       autoFormula: false,
     };
@@ -1213,20 +1232,13 @@ async function convertWordToMarkdown() {
 
   const sections = data.sections || {};
   const fallback = data.markdown || "";
-  const target = $("convertTarget").value;
-  if (target === "questionText") {
-    $("questionText").value = normalizeLineBreaks(sections.question || fallback);
-    $("answerText").value = normalizeLineBreaks(
-      mergeText($("answerText").value, sections.answer || ""),
-    );
-    $("analysisText").value = normalizeLineBreaks(
-      mergeText($("analysisText").value, sections.analysis || ""),
-    );
-  } else {
-    const sectionName = target === "answerText" ? "answer" : "analysis";
-    const convertedText = sections[sectionName] || sections.question || data.text_markdown || fallback;
-    $(target).value = normalizeLineBreaks(mergeText($(target).value, convertedText));
-  }
+  $("questionText").value = normalizeLineBreaks(sections.question || fallback);
+  $("answerText").value = normalizeLineBreaks(
+    mergeText($("answerText").value, sections.answer || ""),
+  );
+  $("analysisText").value = normalizeLineBreaks(
+    mergeText($("analysisText").value, sections.analysis || ""),
+  );
   fillMetadata(data.metadata || {});
 
   state.wordDraftId = data.draft_id || "";
@@ -2344,9 +2356,7 @@ async function loadImportStatus() {
     $("ocrStatus").textContent = data.detail || "读取导入状态失败";
     return;
   }
-  $("ocrStatus").textContent = data.ocr?.available
-    ? "可识别扫描件和照片"
-    : "照片会保留原图，请人工填写文字";
+  $("ocrStatus").textContent = "文件仅在本机处理";
   const list = $("importTaskList");
   list.innerHTML = "";
   for (const item of data.tasks || []) {

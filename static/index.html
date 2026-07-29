@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>题搭子</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=1.0.0" />
+    <link rel="stylesheet" href="./style.css?v=1.1.0" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -65,8 +65,8 @@
       <section class="taxonomy-browser" aria-label="题库分类">
         <div class="sidebar-section-label">题库分类</div>
         <div class="taxonomy-tabs" role="tablist" aria-label="题库分类方式">
-          <button type="button" class="taxonomy-tab is-active" data-taxonomy-mode="block">知识板块</button>
-          <button type="button" class="taxonomy-tab" data-taxonomy-mode="type">题型</button>
+          <button type="button" role="tab" aria-selected="true" class="taxonomy-tab is-active" data-taxonomy-mode="block">知识板块</button>
+          <button type="button" role="tab" aria-selected="false" class="taxonomy-tab" data-taxonomy-mode="type">题型</button>
         </div>
         <div id="taxonomyList" class="taxonomy-list">
           <span class="taxonomy-loading">正在读取分类…</span>
@@ -88,21 +88,22 @@
             <button type="button" id="commitImportBtn" disabled>确认入库</button>
           </div>
         </div>
-        <div class="grid">
-          <label class="wide">
-            题目文件
-            <input id="batchImportFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
+        <div class="import-source-grid">
+          <label class="import-source-field">
+            <span>题目 Word</span>
+            <input id="batchImportFile" type="file" accept=".docx" />
           </label>
-          <label class="wide">
-            答案与解析文件（可不选）
-            <input id="batchAnswerFile" type="file" accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff" />
+          <label class="import-source-field">
+            <span>答案与解析 Word <small>可不选</small></span>
+            <input id="batchAnswerFile" type="file" accept=".docx" />
           </label>
         </div>
+        <div class="inline-note import-format-note">仅支持 .docx Word 文件，不支持 PDF。</div>
         <div class="action-group import-actions">
           <button type="button" id="analyzeImportBtn">开始整理</button>
-          <span id="ocrStatus" class="quiet-status"></span>
+          <span id="ocrStatus" class="quiet-status" aria-live="polite"></span>
         </div>
-        <div id="importResult" class="result-box"></div>
+        <div id="importResult" class="result-box" role="status" aria-live="polite"></div>
         <div id="importDrafts" class="import-drafts"></div>
         <details class="recent-imports">
           <summary>继续上次导入</summary>
@@ -112,11 +113,23 @@
 
       <section class="panel panel-primary workspace-view" data-workspace-view="manual">
         <div class="section-title">
-          <h2>题目内容</h2>
+          <h2>录入单题</h2>
           <button type="button" id="draftBtn">检查题目</button>
         </div>
 
-        <div class="grid">
+        <div class="convert-box">
+          <div class="minor-title">从 Word 自动整理题目</div>
+          <div class="convert-row">
+            <label class="word-convert-field">
+              题目 Word（.docx）
+              <input id="wordConvertFile" type="file" accept=".docx" />
+            </label>
+            <button type="button" id="convertWordBtn" class="secondary">自动整理</button>
+          </div>
+          <div id="wordFormulaStatus" class="inline-note hidden" role="status" aria-live="polite"></div>
+        </div>
+
+        <div class="grid manual-meta-grid">
           <label>
             板块
             <select id="blockCode"></select>
@@ -137,31 +150,17 @@
             年份
             <input id="year" placeholder="例如 2025" />
           </label>
-          <label class="wide">
+          <label>
             题目来源
             <input id="source" placeholder="如：高三月考、教师自编" />
           </label>
-          <label class="wide">
-            添加图片或原文件
-            <input id="files" type="file" multiple accept=".doc,.docx,.pdf,image/*" />
+          <label class="manual-image-field">
+            题目图片（可不选）
+            <input id="files" type="file" multiple accept="image/*" />
           </label>
         </div>
 
-        <div class="convert-box">
-          <div class="minor-title">从 Word 读取内容</div>
-          <div class="convert-row">
-            <input id="wordConvertFile" type="file" accept=".docx" />
-            <select id="convertTarget">
-              <option value="questionText">作为题目</option>
-              <option value="answerText">填入答案</option>
-              <option value="analysisText">填入解析</option>
-            </select>
-            <button type="button" id="convertWordBtn" class="secondary">读取内容</button>
-          </div>
-          <div id="wordFormulaStatus" class="inline-note hidden"></div>
-        </div>
-
-        <div class="content-field">
+        <div class="content-field question-workbench">
           <div class="content-field-header">
             <strong>题目</strong>
             <div class="formula-tools">
@@ -233,7 +232,6 @@
         <div class="section-title">
           <div>
             <div>
-              <span class="section-kicker">QUESTION BANK</span>
               <h2>浏览与修改</h2>
             </div>
             <span class="section-description">按板块、题型或关键词快速定位题目</span>
@@ -660,6 +658,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=1.0.0"></script>
+    <script src="./app.js?v=1.1.0"></script>
   </body>
 </html>
