@@ -122,6 +122,9 @@ def test_manual_image_picker_appends_each_selection():
     assert "function manualImageActions(item)" in javascript
     assert "processedBeforeEnhance" in javascript
     assert "preserveEnhance" in javascript
+    assert "function hasPendingManualImageProcessing()" in javascript
+    assert "item.processing = true;" in javascript
+    assert "图片正在处理，请稍候再入库。" in javascript
     for label in ("左转", "右转", "去阴影", "裁剪", "透视校正", "恢复原图"):
         assert label in javascript
 

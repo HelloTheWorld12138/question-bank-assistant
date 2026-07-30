@@ -804,7 +804,8 @@ function renderWordFormulaStatus(summary) {
 
 function setSaveEnabled() {
   const unresolved = state.formulaItems.some((item) => !item.confirmed);
-  $("saveBtn").disabled = !state.draftReady || unresolved;
+  $("saveBtn").disabled =
+    !state.draftReady || unresolved || hasPendingManualImageProcessing();
 }
 
 function setUploadItems(fileList) {
@@ -825,6 +826,7 @@ function setUploadItems(fileList) {
       originalFile: file,
       beforeEnhanceFile: null,
       enhanced: false,
+      processing: false,
       token: `upload-image://${uniquePart}`,
       previewUrl: URL.createObjectURL(file),
       source: "manual",
@@ -898,21 +900,23 @@ async function requestProcessedManualFile(file, action, changes, displayName) {
   return new File([blob], outputName, { type: "image/png" });
 }
 
+function hasPendingManualImageProcessing() {
+  return state.uploadItems.some(
+    (item) => item.source === "manual" && Boolean(item.processing),
+  );
+}
+
 async function processManualUpload(item, action, changes = {}) {
   if (action === "reset") {
     replaceManualUploadFile(item, item.originalFile);
     item.beforeEnhanceFile = null;
     item.enhanced = false;
-    renderImagePreview();
-    renderManualPreviews();
     return true;
   }
   if (action === "enhance" && item.enhanced && item.beforeEnhanceFile) {
     replaceManualUploadFile(item, item.beforeEnhanceFile);
     item.beforeEnhanceFile = null;
     item.enhanced = false;
-    renderImagePreview();
-    renderManualPreviews();
     return true;
   }
 
@@ -947,9 +951,22 @@ async function processManualUpload(item, action, changes = {}) {
     item.beforeEnhanceFile = null;
     item.enhanced = false;
   }
-  renderImagePreview();
-  renderManualPreviews();
   return true;
+}
+
+async function runManualImageAction(item, action, changes = {}) {
+  if (item.processing) return false;
+  item.processing = true;
+  renderImagePreview();
+  setSaveEnabled();
+  try {
+    return await processManualUpload(item, action, changes);
+  } finally {
+    item.processing = false;
+    renderImagePreview();
+    renderManualPreviews();
+    setSaveEnabled();
+  }
 }
 
 function manualImageActions(item) {
@@ -968,24 +985,22 @@ function manualImageActions(item) {
     button.type = "button";
     button.className = "ghost compact";
     button.textContent = label;
-    button.disabled = !editable;
-    button.title = editable ? "" : "该格式暂不支持在线调整";
+    button.disabled = !editable || item.processing;
+    button.title = "";
+    if (!editable) button.title = "该格式暂不支持在线调整";
+    else if (item.processing) button.title = "图片正在处理";
     button.addEventListener("click", async () => {
+      if (item.processing) return;
       if (action === "crop" || action === "perspective") {
         openImageEditor(
           null,
           { name: item.displayName, url: item.previewUrl },
           action,
-          (changes) => processManualUpload(item, action, changes),
+          (changes) => runManualImageAction(item, action, changes),
         );
         return;
       }
-      button.disabled = true;
-      try {
-        await processManualUpload(item, action);
-      } finally {
-        button.disabled = !editable;
-      }
+      await runManualImageAction(item, action);
     });
     actions.appendChild(button);
   }
@@ -1000,9 +1015,11 @@ function imagePreviewCard({
   fieldIds = MANUAL_SECTION_IDS,
   onChanged = renderImagePreview,
   extraActions = null,
+  actionsDisabled = false,
 }) {
   const card = document.createElement("div");
   card.className = "image-preview-card";
+  card.setAttribute("aria-busy", String(actionsDisabled));
   const visual = document.createElement("div");
   visual.className = "image-preview-visual";
   const source = previewUrl || safePreviewImageUrl(url);
@@ -1029,18 +1046,21 @@ function imagePreviewCard({
         ["放入答案", "editAnswerText"],
         ["放入解析", "editAnalysisText"],
       ]
-    : [
-        ["放入题目", "questionText"],
-        ["放入答案", "answerText"],
-        ["放入解析", "analysisText"],
-      ];
+      : [
+          ["放入题目", "questionText"],
+          ["放入答案", "answerText"],
+          ["放入解析", "analysisText"],
+        ];
   for (const [label, targetId] of targets) {
-    actions.appendChild(imageActionButton(label, targetId, url, onChanged));
+    const button = imageActionButton(label, targetId, url, onChanged);
+    button.disabled = actionsDisabled;
+    actions.appendChild(button);
   }
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "ghost compact danger-text";
   remove.textContent = "移除";
+  remove.disabled = actionsDisabled;
   remove.addEventListener("click", onRemove);
   actions.appendChild(remove);
   info.append(title, location);
@@ -1092,6 +1112,7 @@ function renderImagePreview() {
         url: item.token,
         previewUrl: item.previewUrl,
         extraActions: item.source === "manual" ? manualImageActions(item) : null,
+        actionsDisabled: Boolean(item.processing),
         onRemove: () => {
           removeImageReference(item.token);
           if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -1416,6 +1437,11 @@ function appendFormValue(form, key, value) {
 
 async function saveQuestion() {
   if (!state.draftReady) return;
+  if (hasPendingManualImageProcessing()) {
+    alert("图片正在处理，请稍候再入库。");
+    setSaveEnabled();
+    return;
+  }
   normalizeFields(MANUAL_SECTION_IDS);
   const unresolved = state.formulaItems.filter((item) => !item.confirmed);
   if (unresolved.length) {

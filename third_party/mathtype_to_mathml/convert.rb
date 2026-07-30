@@ -59,8 +59,10 @@ def mathtype_character_map(converter)
     document.xpath("//symbol[@number][@char]").each_with_object({}) do |symbol, result|
       codepoint = symbol["number"].to_i(16)
       next unless PRIVATE_USE_RANGE.cover?(codepoint)
+      character = symbol["char"]
+      next if character.nil? || character.empty?
 
-      result[codepoint.chr(Encoding::UTF_8)] = symbol["char"]
+      result[codepoint.chr(Encoding::UTF_8)] = character
     end
   end
 end

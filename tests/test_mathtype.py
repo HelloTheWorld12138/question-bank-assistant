@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import subprocess
 import zipfile
 import zlib
 from pathlib import Path
@@ -206,6 +208,57 @@ def test_real_equation_editor_3_ole_converts_to_editable_latex(tmp_path):
     assert markdown.startswith(r"由$\frac")
     assert summary["converted"] == 1
     assert summary["failed"] == 0
+
+
+def test_unmapped_equation_editor_character_triggers_formula_fallback(tmp_path):
+    ruby = mathtype.find_ruby()
+    if not ruby:
+        pytest.skip("Ruby is unavailable")
+
+    fixture_runtime = tmp_path / "fixture-runtime"
+    rubylib = mathtype._vendor_rubylib(fixture_runtime)
+    fixture = (
+        fixture_runtime
+        / "mathtype-plus"
+        / "lib"
+        / "mathtype-0.0.7.5"
+        / "spec"
+        / "fixtures"
+        / "input"
+        / "mathtype3"
+        / "frac.bin"
+    )
+    environment = dict(os.environ)
+    environment["RUBYLIB"] = os.pathsep.join(
+        item for item in (rubylib, environment.get("RUBYLIB", "")) if item
+    )
+    environment["CONVERTER_SCRIPT"] = str(mathtype.CONVERTER_SCRIPT)
+    script = r"""
+fixture = ARGV.fetch(0)
+load ENV.fetch("CONVERTER_SCRIPT")
+converter = MathTypeToMathMLPlus::Converter.new(fixture)
+begin
+  normalize_mathml("<math><mi>&#xE991;</mi></math>", converter)
+rescue NotImplementedError => error
+  puts error.message
+  exit 0
+end
+warn "Unmapped private-use character was silently removed."
+exit 1
+"""
+
+    completed = subprocess.run(
+        [ruby, "-e", script, str(fixture)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "U+E991" in completed.stdout
 
 
 def test_equation_editor_prescripts_can_use_following_word_text_as_base(tmp_path):
