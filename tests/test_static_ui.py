@@ -83,8 +83,10 @@ def test_teacher_import_fields_enforce_word_and_image_roles():
 
     assert 'id="batchImportFile" type="file" accept=".docx"' in html
     assert 'id="batchAnswerFile" type="file" accept=".docx"' in html
-    assert "仅支持 .docx Word 文件，不支持 PDF。" in html
-    assert "题目图片（可不选）" in html
+    assert "旧版 .doc 请先在 Word 中另存为 .docx" in html
+    assert "题目图片（可多选）" in html
+    assert 'id="manualImageWorkspace"' in html
+    assert "图片调整" in html
     assert 'id="files" type="file" multiple accept="image/*"' in html
     assert "从 Word 自动整理题目" in html
     assert 'id="convertTarget"' not in html
@@ -103,6 +105,25 @@ def test_teacher_import_fields_enforce_word_and_image_roles():
     assert "--font-ui: 14px" in stylesheet
     assert "button.secondary:disabled" in stylesheet
     assert "color: #465761" in stylesheet
+
+
+def test_manual_image_picker_appends_each_selection():
+    javascript = (config.ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    function_source = javascript.split("function setUploadItems(fileList)", 1)[1].split(
+        "\n}\n\nfunction imageLocations",
+        1,
+    )[0]
+
+    assert "state.uploadItems.push(...manualUploads);" in function_source
+    assert '$(\"files\").value = \"\";' in function_source
+    assert "state.uploadItems = convertedWordUploads.concat(manualUploads);" not in function_source
+    assert "URL.revokeObjectURL" not in function_source
+    assert 'fetch("/api/images/process"' in javascript
+    assert "function manualImageActions(item)" in javascript
+    assert "processedBeforeEnhance" in javascript
+    assert "preserveEnhance" in javascript
+    for label in ("左转", "右转", "去阴影", "裁剪", "透视校正", "恢复原图"):
+        assert label in javascript
 
 
 def test_import_review_uses_one_full_preview_without_confidence_banner():

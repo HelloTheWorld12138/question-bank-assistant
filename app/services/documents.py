@@ -345,7 +345,10 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     agent_used = False
     warnings = []
     if formula_preprocess_fallback_count:
-        warnings.append("旧版公式结构预处理未完成，已按原 Word 读取并保留公式预览图。")
+        warnings.append(
+            "Equation Editor / MathType 旧版公式结构预处理未完成，"
+            "已按原 Word 读取并保留公式预览图。"
+        )
     if opencode_available():
         try:
             agent_sections, agent_error = run_opencode(markdown, config.ROOT)
@@ -370,7 +373,8 @@ def convert_docx_path(input_path: Path) -> dict[str, Any]:
     if mathtype_summary["detected"]:
         if not mathtype_summary["failed"]:
             warnings.append(
-                f"已将 {mathtype_summary['converted']} 个旧版 MathType 公式转为可编辑公式。"
+                f"已将 {mathtype_summary['converted']} 个 Equation Editor / MathType "
+                "旧版公式转为可编辑公式。"
             )
         else:
             warnings.append(

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>题搭子</title>
     <link rel="stylesheet" href="./vendor/katex/katex.min.css" />
-    <link rel="stylesheet" href="./style.css?v=1.1.2" />
+    <link rel="stylesheet" href="./style.css?v=1.1.3" />
   </head>
   <body>
     <div id="directOpenWarning" class="direct-open-warning hidden">
@@ -98,7 +98,9 @@
             <input id="batchAnswerFile" type="file" accept=".docx" />
           </label>
         </div>
-        <div class="inline-note import-format-note">仅支持 .docx Word 文件，不支持 PDF。</div>
+        <div class="inline-note import-format-note">
+          仅支持 .docx Word 文件；旧版 .doc 请先在 Word 中另存为 .docx，不支持 PDF。
+        </div>
         <div class="action-group import-actions">
           <button type="button" id="analyzeImportBtn">开始整理</button>
           <span id="ocrStatus" class="quiet-status" aria-live="polite"></span>
@@ -121,7 +123,7 @@
           <div class="minor-title">从 Word 自动整理题目</div>
           <div class="convert-row">
             <label class="word-convert-field">
-              题目 Word（.docx）
+              题目 Word（.docx；旧版 .doc 请先另存）
               <input id="wordConvertFile" type="file" accept=".docx" />
             </label>
             <button type="button" id="convertWordBtn" class="secondary">自动整理</button>
@@ -155,10 +157,16 @@
             <input id="source" placeholder="如：高三月考、教师自编" />
           </label>
           <label class="manual-image-field">
-            题目图片（可不选）
+            题目图片（可多选）
             <input id="files" type="file" multiple accept="image/*" />
           </label>
         </div>
+        <section id="manualImageWorkspace" class="manual-image-workspace hidden" aria-label="题目图片调整">
+          <div class="content-field-header">
+            <strong>图片调整</strong>
+          </div>
+          <div id="imagePreview" class="preview-list"></div>
+        </section>
 
         <div class="content-field question-workbench">
           <div class="content-field-header">
@@ -212,10 +220,6 @@
             备注
             <textarea id="remarks" rows="3" placeholder="可填写组卷说明、易错点或讲评提示"></textarea>
           </label>
-          <div>
-            <div class="minor-title">图片</div>
-            <div id="imagePreview" class="preview-list"></div>
-          </div>
           <div id="formulaPanel" class="formula-panel hidden">
             <div class="minor-title">检查公式图片</div>
             <div id="formulaList"></div>
@@ -623,6 +627,6 @@
     </dialog>
 
     <script src="./vendor/katex/katex.min.js"></script>
-    <script src="./app.js?v=1.1.2"></script>
+    <script src="./app.js?v=1.1.3"></script>
   </body>
 </html>

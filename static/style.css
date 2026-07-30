@@ -1904,6 +1904,24 @@ tbody tr {
   grid-column: 1 / -1;
 }
 
+.manual-image-workspace {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.manual-image-workspace.hidden {
+  display: none;
+}
+
+.manual-image-workspace .preview-list {
+  align-items: stretch;
+}
+
 .question-workbench {
   grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
   align-items: stretch;

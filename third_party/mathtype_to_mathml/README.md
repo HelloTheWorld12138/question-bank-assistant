@@ -1,6 +1,6 @@
 # MathType 结构化转换组件
 
-此目录保存题库助手读取旧版 MathType/OLE 公式所需的固定版本组件。
+此目录保存题库助手读取 Microsoft Equation Editor 3.0 与旧版 MathType/OLE 公式所需的固定版本组件。
 
 运行链路：
 

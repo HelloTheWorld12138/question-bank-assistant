@@ -26,6 +26,7 @@ const INLINE_FORMAT_RE =
   /(<sub>[^<>]*<\/sub>|<sup>[^<>]*<\/sup>|\*\*\*[^*\n]+\*\*\*|___[^_\n]+___|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/gi;
 const METAFILE_RE = /\.(wmf|emf)(?:\?.*)?$/i;
 const IMAGE_FILE_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|wmf|emf)$/i;
+const RASTER_IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
 const MATHTYPE_FALLBACK_RE = /^QBMATH\d+\.(wmf|emf)$/i;
 let metafileConverterPromise = null;
 
@@ -732,8 +733,9 @@ function renderSystemStatus() {
   const aiReady = Boolean(state.modelSettings?.enabled);
   status.textContent =
     `Word ${wordReady ? "可用" : "不可用"} · ` +
-    `旧版公式${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
+    `Equation Editor/MathType ${legacyFormulaReady ? "可读取" : "保留原图"} · ` +
     `AI 分类${aiReady ? "已启用" : "未启用"}`;
+  status.title = state.options.mathtype?.message || "";
   status.className = `system-status ${wordReady ? "ok" : "warn"}`;
 }
 
@@ -815,23 +817,22 @@ function setUploadItems(fileList) {
     $("files").value = "";
     return;
   }
-  const convertedWordUploads = state.uploadItems.filter(
-    (item) => item.source === "word-conversion",
-  );
-  for (const item of state.uploadItems.filter((candidate) => candidate.source !== "word-conversion")) {
-    if (item.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
-  }
   const manualUploads = selectedFiles.map((file, index) => {
     const uniquePart = window.crypto?.randomUUID?.() || `${Date.now()}-${index}`;
     return {
       file,
+      displayName: file.name,
+      originalFile: file,
+      beforeEnhanceFile: null,
+      enhanced: false,
       token: `upload-image://${uniquePart}`,
       previewUrl: URL.createObjectURL(file),
       source: "manual",
       autoFormula: false,
     };
   });
-  state.uploadItems = convertedWordUploads.concat(manualUploads);
+  state.uploadItems.push(...manualUploads);
+  $("files").value = "";
 }
 
 function imageLocations(url, fieldIds = MANUAL_SECTION_IDS) {
@@ -864,6 +865,133 @@ function imageActionButton(label, targetId, url, afterInsert) {
   return button;
 }
 
+function replaceManualUploadFile(item, file) {
+  if (item.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(item.previewUrl);
+  item.file = file;
+  item.previewUrl = URL.createObjectURL(file);
+}
+
+async function requestProcessedManualFile(file, action, changes, displayName) {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("action", action);
+  form.append("changes", JSON.stringify(changes));
+  let response;
+  try {
+    response = await fetch("/api/images/process", { method: "POST", body: form });
+  } catch {
+    throw new Error("图片处理服务暂时不可用，请稍后重试。");
+  }
+  if (!response.ok) {
+    let message = "图片处理失败";
+    try {
+      const data = await response.json();
+      message = data.detail || message;
+    } catch {
+      // Keep the local fallback message when the server did not return JSON.
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const outputName = `${displayName.replace(/\.[^.]+$/, "")}.png`;
+  return new File([blob], outputName, { type: "image/png" });
+}
+
+async function processManualUpload(item, action, changes = {}) {
+  if (action === "reset") {
+    replaceManualUploadFile(item, item.originalFile);
+    item.beforeEnhanceFile = null;
+    item.enhanced = false;
+    renderImagePreview();
+    renderManualPreviews();
+    return true;
+  }
+  if (action === "enhance" && item.enhanced && item.beforeEnhanceFile) {
+    replaceManualUploadFile(item, item.beforeEnhanceFile);
+    item.beforeEnhanceFile = null;
+    item.enhanced = false;
+    renderImagePreview();
+    renderManualPreviews();
+    return true;
+  }
+
+  const preserveEnhance =
+    action !== "enhance" && item.enhanced && Boolean(item.beforeEnhanceFile);
+  const previousFile = item.file;
+  const requests = [
+    requestProcessedManualFile(item.file, action, changes, item.displayName),
+  ];
+  if (preserveEnhance) {
+    requests.push(
+      requestProcessedManualFile(item.beforeEnhanceFile, action, changes, item.displayName),
+    );
+  }
+  let processedFile;
+  let processedBeforeEnhance;
+  try {
+    [processedFile, processedBeforeEnhance] = await Promise.all(requests);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : "图片处理失败");
+    return false;
+  }
+
+  replaceManualUploadFile(item, processedFile);
+  if (action === "enhance") {
+    item.beforeEnhanceFile = previousFile;
+    item.enhanced = true;
+  } else if (preserveEnhance) {
+    item.beforeEnhanceFile = processedBeforeEnhance;
+    item.enhanced = true;
+  } else {
+    item.beforeEnhanceFile = null;
+    item.enhanced = false;
+  }
+  renderImagePreview();
+  renderManualPreviews();
+  return true;
+}
+
+function manualImageActions(item) {
+  const actions = document.createElement("div");
+  actions.className = "image-card-actions";
+  const editable = RASTER_IMAGE_RE.test(item.file?.name || item.displayName || "");
+  for (const [action, label] of [
+    ["rotate_left", "左转"],
+    ["rotate_right", "右转"],
+    ["enhance", item.enhanced ? "取消去阴影" : "去阴影"],
+    ["crop", "裁剪"],
+    ["perspective", "透视校正"],
+    ["reset", "恢复原图"],
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ghost compact";
+    button.textContent = label;
+    button.disabled = !editable;
+    button.title = editable ? "" : "该格式暂不支持在线调整";
+    button.addEventListener("click", async () => {
+      if (action === "crop" || action === "perspective") {
+        openImageEditor(
+          null,
+          { name: item.displayName, url: item.previewUrl },
+          action,
+          (changes) => processManualUpload(item, action, changes),
+        );
+        return;
+      }
+      button.disabled = true;
+      try {
+        await processManualUpload(item, action);
+      } finally {
+        button.disabled = !editable;
+      }
+    });
+    actions.appendChild(button);
+  }
+  return actions;
+}
+
 function imagePreviewCard({
   name,
   url,
@@ -871,6 +999,7 @@ function imagePreviewCard({
   onRemove,
   fieldIds = MANUAL_SECTION_IDS,
   onChanged = renderImagePreview,
+  extraActions = null,
 }) {
   const card = document.createElement("div");
   card.className = "image-preview-card";
@@ -914,18 +1043,23 @@ function imagePreviewCard({
   remove.textContent = "移除";
   remove.addEventListener("click", onRemove);
   actions.appendChild(remove);
-  info.append(title, location, actions);
+  info.append(title, location);
+  if (extraActions) info.appendChild(extraActions);
+  info.appendChild(actions);
   card.append(visual, info);
   return card;
 }
 
 function renderImagePreview() {
   const holder = $("imagePreview");
+  const workspace = $("manualImageWorkspace");
   holder.innerHTML = "";
   const uploads = state.uploadItems.filter((item) => item.previewUrl && !item.autoFormula);
   const formulaImageCount = state.uploadItems.filter((item) => item.autoFormula).length;
   const hasWordImages = state.wordDraftImages.length > 0;
-  if (!uploads.length && !hasWordImages && !formulaImageCount) {
+  const hasImages = uploads.length > 0 || hasWordImages || formulaImageCount > 0;
+  workspace?.classList.toggle("hidden", !hasImages);
+  if (!hasImages) {
     holder.textContent = "没有图片。";
     return;
   }
@@ -954,9 +1088,10 @@ function renderImagePreview() {
   for (const item of uploads) {
     holder.appendChild(
       imagePreviewCard({
-        name: item.file.name,
+        name: item.displayName || item.file.name,
         url: item.token,
         previewUrl: item.previewUrl,
+        extraActions: item.source === "manual" ? manualImageActions(item) : null,
         onRemove: () => {
           removeImageReference(item.token);
           if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -2663,13 +2798,14 @@ function resetImageEditorSelection() {
   drawImageEditor();
 }
 
-function openImageEditor(draftId, image, mode) {
+function openImageEditor(draftId, image, mode, applyChanges = null) {
   const source = String(image.url || "").split("?", 1)[0];
   const editorImage = new Image();
   state.imageEditor = {
     draftId,
     imageName: image.name,
     mode,
+    applyChanges,
     image: editorImage,
     dragging: null,
     ...imageEditorDefaults(mode),
@@ -2692,7 +2828,7 @@ function openImageEditor(draftId, image, mode) {
     alert("图片预览无法打开，请重新导入这张图片。");
     $("imageEditorDialog").close();
   });
-  editorImage.src = `${source}?editor=${Date.now()}`;
+  editorImage.src = source.startsWith("blob:") ? source : `${source}?editor=${Date.now()}`;
   $("imageEditorDialog").showModal();
 }
 
@@ -2760,7 +2896,11 @@ function bindImageEditorEvents() {
       changes = { perspective: editor.points };
     }
     $("imageEditorDialog").close();
-    await processImportImage(editor.draftId, editor.imageName, editor.mode, changes);
+    if (editor.applyChanges) {
+      await editor.applyChanges(changes);
+    } else {
+      await processImportImage(editor.draftId, editor.imageName, editor.mode, changes);
+    }
     state.imageEditor = null;
   });
 }

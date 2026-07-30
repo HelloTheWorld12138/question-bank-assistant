@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from PIL import Image, ImageOps
 from app import config, storage
 from app.content import normalize_line_breaks
 from app.errors import AppError
+from app.image_processing import preprocess_image
 from app.math_ocr import detect_formula_items, math_delimiter_issue
 from app.processes import hidden_process_kwargs
 from app.services import office
@@ -31,9 +33,49 @@ RASTER_IMAGE_EXTENSIONS = {
     ".tif",
     ".tiff",
 }
+MANUAL_IMAGE_ACTIONS = {
+    "rotate_left",
+    "rotate_right",
+    "crop",
+    "perspective",
+    "enhance",
+}
 IMAGE_WITH_ATTRIBUTES_RE = re.compile(
     r"(!\[[^\]]*\]\([^)]+\))(?P<spacing>[ \t]*)(?P<attributes>\{[^}\n]*\})?"
 )
+
+
+async def process_uploaded_image(
+    upload: UploadFile,
+    action: str,
+    payload: dict[str, Any] | None = None,
+) -> tuple[bytes, str]:
+    filename = Path(upload.filename or "image").name
+    suffix = Path(filename).suffix.lower()
+    if suffix not in RASTER_IMAGE_EXTENSIONS:
+        raise AppError("这张图片暂不支持在线调整，请先转换为 PNG、JPG 或 WEBP。")
+    if action not in MANUAL_IMAGE_ACTIONS:
+        raise AppError("未知的图片处理方式。")
+
+    content = await upload.read()
+    if len(content) > 100 * 1024 * 1024:
+        raise AppError("图片太大，单张图片不能超过 100 MB。")
+    payload = payload or {}
+    with tempfile.TemporaryDirectory(prefix="question-image-process-") as temp_dir:
+        temp_root = Path(temp_dir)
+        source = temp_root / f"source{suffix}"
+        target = temp_root / "processed.png"
+        source.write_bytes(content)
+        rotation = {"rotate_left": -90, "rotate_right": 90}.get(action, 0)
+        preprocess_image(
+            source,
+            target,
+            rotation=rotation,
+            crop=payload.get("crop") if action == "crop" else None,
+            perspective=payload.get("perspective") if action == "perspective" else None,
+            enhance=action == "enhance",
+        )
+        return target.read_bytes(), f"{Path(filename).stem}.png"
 
 
 @contextmanager

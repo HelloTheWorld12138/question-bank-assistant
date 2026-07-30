@@ -156,6 +156,40 @@ def test_uploaded_image_token_is_placed_and_normalized_to_png(isolated_data):
     assert (config.ASSETS_DIR / "LXJC0001_01.png").read_bytes().startswith(b"\x89PNG")
 
 
+def test_multiple_uploaded_images_are_placed_and_saved_in_order(isolated_data):
+    first_buffer = BytesIO()
+    second_buffer = BytesIO()
+    Image.new("RGB", (320, 180), "#ddeeff").save(first_buffer, format="JPEG")
+    Image.new("RGB", (240, 160), "#ffeedd").save(second_buffer, format="PNG")
+    first_buffer.seek(0)
+    second_buffer.seek(0)
+    uploads = [
+        UploadFile(filename="diagram-a.jpg", file=first_buffer),
+        UploadFile(filename="diagram-b.png", file=second_buffer),
+    ]
+    tokens = ["upload-image://diagram-a", "upload-image://diagram-b"]
+    question_text = (
+        f"观察两幅图。\n\n![题图一]({tokens[0]})\n\n![题图二]({tokens[1]})"
+    )
+
+    created = asyncio.run(
+        questions.create_question(
+            block_code="LX",
+            type_code="JC",
+            question_text=question_text,
+            files=uploads,
+            upload_image_tokens=tokens,
+        )
+    )
+
+    metadata, sections = storage.read_question(created["id"])
+    assert metadata["图片"] == ["LXJC0001_01.png", "LXJC0001_02.png"]
+    assert "../assets/LXJC0001_01.png" in sections["题目"]
+    assert "../assets/LXJC0001_02.png" in sections["题目"]
+    assert (config.ASSETS_DIR / "LXJC0001_01.png").read_bytes().startswith(b"\x89PNG")
+    assert (config.ASSETS_DIR / "LXJC0001_02.png").read_bytes().startswith(b"\x89PNG")
+
+
 def test_non_image_question_attachment_is_rejected(isolated_data):
     upload = UploadFile(filename="source.docx", file=BytesIO(b"not-an-image"))
 

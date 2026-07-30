@@ -1,7 +1,9 @@
 import json
+from io import BytesIO
 
 import httpx
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app import config
 from app.main import app
@@ -102,6 +104,23 @@ def test_health_and_question_api(isolated_data):
 
         unsafe = client.get("/api/questions/../../secrets")
         assert unsafe.status_code in {400, 404}
+
+
+def test_manual_image_processing_api_rotates_to_png(isolated_data):
+    source = BytesIO()
+    Image.new("RGB", (80, 40), "#ddeeff").save(source, format="JPEG")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/images/process",
+            data={"action": "rotate_right", "changes": "{}"},
+            files={"file": ("题图.jpg", source.getvalue(), "image/jpeg")},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    with Image.open(BytesIO(response.content)) as processed:
+        assert processed.size == (40, 80)
 
 
 def test_model_settings_test_and_classification_api(isolated_data, monkeypatch):

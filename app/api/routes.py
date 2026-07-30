@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app import config, knowledge, mathtype, storage
 from app.agent import opencode_available
@@ -105,6 +106,22 @@ async def create_question(
         upload_image_tokens=upload_image_tokens,
         files=files,
     )
+
+
+@api_router.post("/images/process")
+async def process_uploaded_image(
+    file: UploadFile = File(...),
+    action: str = Form(...),
+    changes: str = Form("{}"),
+) -> Response:
+    try:
+        payload = json.loads(changes)
+    except json.JSONDecodeError as exc:
+        raise AppError("图片调整参数无法读取。") from exc
+    if not isinstance(payload, dict):
+        raise AppError("图片调整参数格式不正确。")
+    content, _ = await questions.process_uploaded_image(file, action, payload)
+    return Response(content=content, media_type="image/png")
 
 
 @api_router.post("/convert-docx")

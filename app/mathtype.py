@@ -267,7 +267,7 @@ def _converter_runtime_status() -> tuple[bool, str]:
             return False, "公式转换运行时无法启动"
     if completed.returncode != 0 or "MATHTYPE_RUNTIME_OK" not in completed.stdout:
         return False, "公式转换依赖不完整"
-    return True, "可读取旧版 MathType 公式"
+    return True, "可读取 Equation Editor / MathType 旧版公式"
 
 
 def mathtype_status() -> dict[str, Any]:
@@ -275,7 +275,11 @@ def mathtype_status() -> dict[str, Any]:
     return {
         "available": available,
         "offline": True,
-        "message": message if available else f"{message}，旧版公式会保留原图，请人工核对",
+        "message": (
+            message
+            if available
+            else f"{message}，Equation Editor / MathType 旧版公式会保留原图，请人工核对"
+        ),
     }
 
 

@@ -74,7 +74,7 @@ def nearby_text(markdown: str, start: int, end: int, radius: int = 120) -> str:
 def is_formula_like(path: Path, context: str, alt_text: str = "") -> tuple[bool, str]:
     ext = path.suffix.lower()
     if ext in FORMULA_EXTENSIONS:
-        return True, "WMF/EMF 常见于旧 MathType 公式"
+        return True, "WMF/EMF 常见于 Equation Editor / MathType 旧版公式"
     label = f"{alt_text} {path.stem}".lower()
     if re.search(r"(公式|方程|formula|equation|math)", label):
         return True, "图片名称表明它是公式"

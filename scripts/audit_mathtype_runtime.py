@@ -40,7 +40,7 @@ def main() -> int:
         except Exception as exc:
             print(f"MathType fixture extraction failed: {exc}", file=sys.stderr)
             return 1
-        fixture = (
+        fixture_root = (
             runtime_dir
             / "mathtype-plus"
             / "lib"
@@ -48,11 +48,18 @@ def main() -> int:
             / "spec"
             / "fixtures"
             / "input"
-            / "mathtype5"
-            / "equation1.bin"
         )
-        if not fixture.is_file():
-            print("MathType conversion fixture is missing.", file=sys.stderr)
+        equation_editor_fixtures = sorted((fixture_root / "mathtype3").glob("*.bin"))
+        fixtures = {
+            f"AUDIT_EQUATION_EDITOR_3_{fixture.stem.upper()}": fixture
+            for fixture in equation_editor_fixtures
+        }
+        fixtures["AUDIT_MATHTYPE_5"] = fixture_root / "mathtype5" / "equation1.bin"
+        if (
+            not equation_editor_fixtures
+            or any(not fixture.is_file() for fixture in fixtures.values())
+        ):
+            print("Formula conversion fixture is missing.", file=sys.stderr)
             return 1
         environment = dict(os.environ)
         environment["RUBYLIB"] = os.pathsep.join(
@@ -62,7 +69,10 @@ def main() -> int:
             [str(ruby), str(mathtype.CONVERTER_SCRIPT), "--stdin-json"],
             cwd=str(runtime_root),
             env=environment,
-            input=json.dumps({"AUDIT_FORMULA": str(fixture)}, ensure_ascii=False),
+            input=json.dumps(
+                {marker: str(fixture) for marker, fixture in fixtures.items()},
+                ensure_ascii=False,
+            ),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -76,21 +86,50 @@ def main() -> int:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-        result = next((item for item in rows if item.get("id") == "AUDIT_FORMULA"), None)
-        if completed.returncode != 0 or not result or not result.get("ok"):
-            error = result.get("error") if result else completed.stderr.strip()
-            print(f"MathType fixture conversion failed: {error}", file=sys.stderr)
+        results = {str(item.get("id") or ""): item for item in rows}
+        if completed.returncode != 0:
+            print(
+                f"Formula fixture conversion failed: {completed.stderr.strip()}",
+                file=sys.stderr,
+            )
             return 1
-        try:
-            mathml = base64.b64decode(result["mathml"]).decode("utf-8")
-        except (KeyError, ValueError, UnicodeDecodeError) as exc:
-            print(f"MathType fixture output is invalid: {exc}", file=sys.stderr)
+        equations: dict[str, str] = {}
+        for marker in fixtures:
+            result = results.get(marker)
+            if not result or not result.get("ok"):
+                error = result.get("error") if result else "no result"
+                print(f"{marker} conversion failed: {error}", file=sys.stderr)
+                return 1
+            try:
+                mathml = base64.b64decode(result["mathml"]).decode("utf-8")
+            except (KeyError, ValueError, UnicodeDecodeError) as exc:
+                print(f"{marker} output is invalid: {exc}", file=sys.stderr)
+                return 1
+            if "<math" not in mathml:
+                print(f"{marker} did not produce MathML.", file=sys.stderr)
+                return 1
+            if any(0xE000 <= ord(character) <= 0xF8FF for character in mathml):
+                print(f"{marker} retained an unsupported private-use character.", file=sys.stderr)
+                return 1
+            equations[marker] = mathml
+
+        pandoc_name = "pandoc.exe" if os.name == "nt" else "pandoc"
+        pandoc = runtime_root / "tools" / "pandoc" / pandoc_name
+        if not pandoc.is_file():
+            print("Bundled Pandoc is missing from the formula audit.", file=sys.stderr)
             return 1
-        if "<math" not in mathml:
-            print("MathType fixture did not produce MathML.", file=sys.stderr)
+        latex, latex_failures = mathtype.mathml_to_latex(equations, str(pandoc))
+        if latex_failures or set(latex) != set(fixtures):
+            print(
+                f"Formula-to-LaTeX audit failed: {latex_failures}",
+                file=sys.stderr,
+            )
+            return 1
+        if "\\frac" not in latex["AUDIT_EQUATION_EDITOR_3_FRAC"]:
+            print("Equation Editor 3.0 audit lost the fraction structure.", file=sys.stderr)
             return 1
 
-    print("MathType runtime audit passed with a real formula conversion.")
+    print("Formula runtime audit passed for Equation Editor 3.0 and MathType.")
     return 0
 
 
