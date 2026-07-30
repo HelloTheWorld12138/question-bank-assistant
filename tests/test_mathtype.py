@@ -211,6 +211,8 @@ def test_real_equation_editor_3_ole_converts_to_editable_latex(tmp_path):
 
 
 def test_unmapped_equation_editor_character_triggers_formula_fallback(tmp_path):
+    if not mathtype.mathtype_status()["available"]:
+        pytest.skip("Equation conversion runtime is unavailable")
     ruby = mathtype.find_ruby()
     if not ruby:
         pytest.skip("Ruby is unavailable")
